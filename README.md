@@ -1,17 +1,16 @@
 # CQ (Codex Quota Monitor)
 
-A TUI for monitoring Codex quota written in Go using [Bubble Tea](https://github.com/charmbracelet/bubbletea).
+A TUI for switching between Codex accounts and monitoring quota usage, written in Go using [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
 ![Demo](demo.gif)
 
 ## Features
 
-- Multiple Codex accounts
-- Accounts from local app storage, OpenCode, and Codex auth files
+- Fast account switching across many accounts
+- Multi-target apply: set active account for Codex and/or OpenCode in one flow
+- Accounts from local app storage, OpenCode auth, and Codex auth
 - OAuth authentication via browser
-- Apply active account to OpenCode or Codex auth
-- Two view modes: compact for many accounts, tabs for focused viewing when you have just a few.
-
+- - Two view modes: compact for many accounts, tabs for focused viewing when you have just a few.
 ## Installation
 
 ```bash
@@ -36,7 +35,12 @@ Run the app:
 cq
 ```
 
-On first launch press `n` to add an account via OAuth.
+Typical flow:
+
+1. Press `n` to add/import account via OAuth.
+2. Move between accounts with arrows (or `h`/`j`/`k`/`l`).
+3. Press `Enter` (or `o`) to apply account to Codex/OpenCode.
+4. Use `r`/`R` to refresh quota and `i` for details.
 
 ## Controls
 
