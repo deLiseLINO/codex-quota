@@ -1,0 +1,62 @@
+version: 2
+
+project_name: codex-quota
+
+builds:
+  - id: cq
+    main: ./cmd/cq
+    binary: cq
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: cq-archive
+    formats:
+      - tar.gz
+    name_template: >-
+      codex-quota_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: deLiseLINO
+    name: codex-quota
+  draft: false
+  prerelease: auto
+  mode: append
+  name_template: "v{{ .Version }}"
+
+brews:
+  - name: codex-quota
+    repository:
+      owner: deLiseLINO
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/deLiseLINO/codex-quota"
+    description: "Terminal account switcher and quota monitor for Codex/OpenCode"
+    license: "MIT"
+    test: |
+      system "#{bin}/cq", "--help"
