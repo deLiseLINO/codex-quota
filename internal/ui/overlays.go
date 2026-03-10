@@ -36,29 +36,70 @@ func (m Model) currentOverlayModal() string {
 	}
 
 	if m.Err != nil {
-		return renderMessageModal("Error", m.Err.Error(), ErrorStyle)
+		return renderMessageModal("Error", m.Err.Error(), ErrorStyle, m.Width)
 	}
 
 	if m.Notice != "" {
-		return renderMessageModal("Notice", m.Notice, NoticeStyle)
+		return renderMessageModal("Notice", m.Notice, NoticeStyle, m.Width)
 	}
 
 	if m.activeAccount() == nil {
-		return renderMessageModal("No accounts", "No accounts loaded.\nPress n to add account.", WarningStyle)
+		return renderMessageModal("No accounts", "No accounts loaded.\nPress n to add account.", WarningStyle, m.Width)
 	}
 
 	return ""
 }
 
-func renderMessageModal(title, message string, titleStyle lipgloss.Style) string {
-	if len(message) > 90 {
-		message = message[:87] + "..."
+const (
+	messageModalMinWidth = 64
+	messageModalMaxWidth = 104
+	messageModalInset    = 6
+)
+
+func renderMessageModal(title, message string, titleStyle lipgloss.Style, viewportWidth int) string {
+	message = strings.TrimSpace(message)
+	width := messageModalWidth(title, message, viewportWidth)
+	bodyWidth := width - 2 // account for InfoBoxStyle horizontal padding
+	if bodyWidth < 1 {
+		bodyWidth = 1
 	}
+	wrappedMessage := lipgloss.NewStyle().Width(bodyWidth).Render(message)
 	content := strings.Join([]string{
 		titleStyle.Render(title),
-		InfoValueStyle.Render(message),
+		InfoValueStyle.Render(wrappedMessage),
 	}, "\n\n")
-	return InfoBoxStyle.Copy().Width(64).Render(content)
+	return InfoBoxStyle.Copy().Width(width).Render(content)
+}
+
+func messageModalWidth(title, message string, viewportWidth int) int {
+	target := messageModalMinWidth
+	for _, line := range strings.Split(strings.TrimSpace(message), "\n") {
+		width := ansi.StringWidth(line) + 2
+		if width > target {
+			target = width
+		}
+	}
+	if titleWidth := ansi.StringWidth(title) + 2; titleWidth > target {
+		target = titleWidth
+	}
+	if target > messageModalMaxWidth {
+		target = messageModalMaxWidth
+	}
+	if viewportWidth <= 0 {
+		return target
+	}
+
+	maxAllowed := viewportWidth - messageModalInset - 2 // border width
+	if maxAllowed <= 0 {
+		return messageModalMinWidth
+	}
+	if maxAllowed < messageModalMinWidth {
+		return maxAllowed
+	}
+	if target > maxAllowed {
+		return maxAllowed
+	}
+	return target
 }
 
 func (m Model) renderDeleteSourceModal() string {
@@ -139,6 +180,7 @@ func (m Model) renderApplyConfirmModal() string {
 		"Apply account",
 		fmt.Sprintf("Apply this account to: %s?\n[enter] Confirm   [esc] Cancel", targetLabel),
 		WarningStyle,
+		m.Width,
 	)
 }
 
