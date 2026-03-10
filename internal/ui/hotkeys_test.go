@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/deLiseLINO/codex-quota/internal/api"
 	"github.com/deLiseLINO/codex-quota/internal/config"
@@ -92,6 +94,93 @@ func TestQuestionMarkOpensHelpOverlay(t *testing.T) {
 	}
 	if got.ActionMenuVisible {
 		t.Fatalf("did not expect action menu to open")
+	}
+}
+
+func TestEscCancelsAddAccountLoginModal(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.AddAccountLoginVisible = true
+	m.AddAccountLoginURL = "https://auth.openai.com/example"
+	m.AddAccountBrowserFailed = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	got := updated.(Model)
+
+	if got.AddAccountLoginVisible {
+		t.Fatalf("expected add account login modal to close on esc")
+	}
+	if got.AddAccountLoginURL != "" {
+		t.Fatalf("expected login URL to clear on esc, got %q", got.AddAccountLoginURL)
+	}
+	if got.AddAccountBrowserFailed {
+		t.Fatalf("expected browser failure flag to clear on esc")
+	}
+	if cmd == nil {
+		t.Fatalf("expected cancel command on esc")
+	}
+}
+
+func TestQQuitsFromAddAccountLoginModal(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.AddAccountLoginVisible = true
+	m.AddAccountLoginURL = "https://auth.openai.com/example"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	got := updated.(Model)
+
+	if got.AddAccountLoginVisible {
+		t.Fatalf("expected add account login modal to close on q")
+	}
+	if cmd == nil {
+		t.Fatalf("expected quit command from add account login modal")
+	}
+}
+
+func TestCInAddAccountLoginModalTriggersCopy(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.AddAccountLoginVisible = true
+	m.AddAccountLoginURL = "https://auth.openai.com/example"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	got := updated.(Model)
+
+	if !got.AddAccountLoginVisible {
+		t.Fatalf("expected add account login modal to remain open")
+	}
+	if cmd == nil {
+		t.Fatalf("expected copy command from add account login modal")
+	}
+}
+
+func TestMouseClickOnAddAccountLoginURLTriggersOpen(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.Width = 140
+	m.Height = 40
+	m.AddAccountLoginVisible = true
+	m.AddAccountLoginURL = "https://auth.openai.com/example"
+
+	layout := m.addAccountLoginModalLayout()
+	modalHeight := lipgloss.Height(InfoBoxStyle.Copy().Width(layout.Width).Render(strings.Join(layout.Lines, "\n")))
+	footerHeight := lipgloss.Height(HelpStyle.Render("\n" + m.renderFooter()))
+	bodyHeight := m.Height - footerHeight
+	startX := (m.Width - layout.Width) / 2
+	startY := (bodyHeight - modalHeight) / 2
+
+	clickX := startX + 3
+	clickY := startY + 1 + layout.URLStartLine
+	updated, cmd := m.Update(tea.MouseMsg{
+		X:      clickX,
+		Y:      clickY,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	})
+	got := updated.(Model)
+
+	if !got.AddAccountLoginVisible {
+		t.Fatalf("expected add account login modal to remain open")
+	}
+	if cmd == nil {
+		t.Fatalf("expected open-browser command from URL click")
 	}
 }
 

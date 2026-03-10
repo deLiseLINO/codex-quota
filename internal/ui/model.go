@@ -29,6 +29,10 @@ type Model struct {
 	HelpVisible             bool
 	ActionMenuVisible       bool
 	ActionMenuCursor        int
+	AddAccountLoginVisible  bool
+	AddAccountLoginURL      string
+	AddAccountBrowserFailed bool
+	AddAccountLoginStatus   string
 	ShowInfo                bool
 	Notice                  string
 	noticeSeq               int
@@ -157,6 +161,13 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		if m.AddAccountLoginVisible && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			if m.addAccountLoginURLContainsPoint(msg.X, msg.Y) {
+				return m, OpenAddAccountLoginURLCmd(m.AddAccountLoginURL)
+			}
+		}
+
 	case tea.KeyMsg:
 		rawKey := msg.String()
 		keyStr := normalizeHelpKey(rawKey, normalizeKey(rawKey))
@@ -166,6 +177,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.HelpVisible {
 			return m.handleHelpOverlay(keyStr)
+		}
+		if m.AddAccountLoginVisible {
+			return m.handleAddAccountLogin(keyStr)
 		}
 		if m.ActionMenuVisible {
 			return m.handleActionMenu(keyStr)
@@ -415,6 +429,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Notice = ""
 		return m, nil
 
+	case AddAccountLoginStartedMsg:
+		m.AddAccountLoginVisible = true
+		m.AddAccountLoginURL = strings.TrimSpace(msg.AuthURL)
+		m.AddAccountBrowserFailed = msg.BrowserOpenFailed
+		m.AddAccountLoginStatus = ""
+		m.Loading = false
+		m.Err = nil
+		m.Notice = ""
+		return m, PollAddAccountLoginCmd()
+
+	case AddAccountLoginPendingMsg:
+		if !m.AddAccountLoginVisible {
+			return m, nil
+		}
+		return m, PollAddAccountLoginCmd()
+
+	case AddAccountLoginFinishedMsg:
+		if !m.AddAccountLoginVisible {
+			return m, nil
+		}
+		m.AddAccountLoginVisible = false
+		m.AddAccountLoginURL = ""
+		m.AddAccountBrowserFailed = false
+		m.AddAccountLoginStatus = ""
+		m.Loading = false
+		if msg.Err != nil {
+			m.Err = fmt.Errorf("login failed: %w", msg.Err)
+			return m, nil
+		}
+		if msg.Account == nil {
+			m.Err = fmt.Errorf("login failed: empty account result")
+			return m, nil
+		}
+		return m, FinalizeAddAccountLoginCmd(msg.Account)
+
+	case AddAccountLoginCopyResultMsg:
+		if !m.AddAccountLoginVisible {
+			return m, nil
+		}
+		if msg.Err != nil {
+			m.AddAccountLoginStatus = msg.Err.Error()
+			return m, nil
+		}
+		m.AddAccountLoginStatus = strings.TrimSpace(msg.Text)
+		return m, nil
+
 	case ErrMsg:
 		if m.ErrorsMap == nil {
 			m.ErrorsMap = make(map[string]error)
@@ -435,6 +495,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Loading = false
 		m.Err = msg.Err
 		m.Notice = ""
+		m.AddAccountLoginVisible = false
+		m.AddAccountLoginURL = ""
+		m.AddAccountBrowserFailed = false
+		m.AddAccountLoginStatus = ""
 		m.resetDeleteState()
 		m.resetApplyState()
 		return m, nextCmd

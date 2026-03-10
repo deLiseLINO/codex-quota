@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/deLiseLINO/codex-quota/internal/api"
@@ -89,6 +91,29 @@ func (m Model) handleHelpOverlay(keyStr string) (tea.Model, tea.Cmd) {
 	case "esc", "help":
 		m.resetHelpState()
 		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) handleAddAccountLogin(keyStr string) (tea.Model, tea.Cmd) {
+	switch keyStr {
+	case "q", "ctrl+c":
+		m.AddAccountLoginVisible = false
+		m.AddAccountLoginURL = ""
+		m.AddAccountBrowserFailed = false
+		m.AddAccountLoginStatus = ""
+		return m, tea.Batch(CancelAddAccountLoginCmd(), tea.Quit)
+	case "esc":
+		m.AddAccountLoginVisible = false
+		m.AddAccountLoginURL = ""
+		m.AddAccountBrowserFailed = false
+		m.AddAccountLoginStatus = ""
+		return m, CancelAddAccountLoginCmd()
+	case "c":
+		if strings.TrimSpace(m.AddAccountLoginURL) == "" {
+			return m, nil
+		}
+		return m, CopyToClipboardCmd(m.AddAccountLoginURL)
 	}
 	return m, nil
 }

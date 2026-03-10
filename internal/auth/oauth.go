@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/deLiseLINO/codex-quota/internal/config"
@@ -40,24 +42,78 @@ type meResponse struct {
 	Name  string `json:"name"`
 }
 
+type OpenAICodexLoginStatus struct {
+	AuthURL           string
+	BrowserOpenFailed bool
+}
+
+var ErrLoginCancelled = errors.New("login cancelled")
+
+type openAICodexLoginSession struct {
+	authURL           string
+	browserOpenFailed bool
+	listener          net.Listener
+	server            *http.Server
+	done              chan struct{}
+	result            *config.Account
+	err               error
+	finishOnce        sync.Once
+}
+
+var (
+	openAICodexLoginMu     sync.Mutex
+	activeOpenAICodexLogin *openAICodexLoginSession
+)
+
 func LoginOpenAICodex() (*config.Account, error) {
+	if _, err := StartOpenAICodexLogin(); err != nil {
+		return nil, err
+	}
+
+	for {
+		account, done, err := PollOpenAICodexLogin()
+		if done {
+			return account, err
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+func StartOpenAICodexLogin() (OpenAICodexLoginStatus, error) {
+	openAICodexLoginMu.Lock()
+	if activeOpenAICodexLogin != nil && activeOpenAICodexLogin.isDone() {
+		activeOpenAICodexLogin = nil
+	}
+	if activeOpenAICodexLogin != nil {
+		status := OpenAICodexLoginStatus{
+			AuthURL:           activeOpenAICodexLogin.authURL,
+			BrowserOpenFailed: activeOpenAICodexLogin.browserOpenFailed,
+		}
+		openAICodexLoginMu.Unlock()
+		return status, nil
+	}
+
 	verifier, challenge, err := generatePKCE()
 	if err != nil {
-		return nil, err
+		openAICodexLoginMu.Unlock()
+		return OpenAICodexLoginStatus{}, err
 	}
 	state, err := randomHex(16)
 	if err != nil {
-		return nil, err
+		openAICodexLoginMu.Unlock()
+		return OpenAICodexLoginStatus{}, err
 	}
 
 	listener, err := net.Listen("tcp", callbackAddress)
 	if err != nil {
-		return nil, fmt.Errorf("failed to bind callback server at %s: %w", callbackAddress, err)
+		openAICodexLoginMu.Unlock()
+		return OpenAICodexLoginStatus{}, fmt.Errorf("failed to bind callback server at %s: %w", callbackAddress, err)
 	}
-	defer listener.Close()
-
-	codeCh := make(chan string, 1)
-	errCh := make(chan error, 1)
+	session := &openAICodexLoginSession{
+		authURL:  buildAuthorizeURL(state, challenge),
+		listener: listener,
+		done:     make(chan struct{}),
+	}
 
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,53 +124,113 @@ func LoginOpenAICodex() (*config.Account, error) {
 			if r.URL.Query().Get("state") != state {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("State mismatch"))
-				errCh <- fmt.Errorf("state mismatch")
+				session.finish(nil, fmt.Errorf("state mismatch"))
 				return
 			}
 			code := r.URL.Query().Get("code")
 			if code == "" {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("Missing code"))
-				errCh <- fmt.Errorf("missing authorization code")
+				session.finish(nil, fmt.Errorf("missing authorization code"))
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("Authentication successful. You can close this window."))
-			codeCh <- code
+			go func() {
+				tokenResp, err := exchangeCodeForToken(code, verifier)
+				if err != nil {
+					session.finish(nil, err)
+					return
+				}
+
+				account, err := accountFromTokenResponse(tokenResp)
+				session.finish(account, err)
+			}()
 		}),
 	}
+	session.server = server
+	activeOpenAICodexLogin = session
+	openAICodexLoginMu.Unlock()
 
 	go func() {
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			errCh <- err
+			session.finish(nil, err)
 		}
 	}()
 
-	authURL := buildAuthorizeURL(state, challenge)
-	if err := openBrowser(authURL); err != nil {
+	if err := openBrowser(session.authURL); err != nil {
+		session.browserOpenFailed = true
 		fmt.Fprintf(os.Stderr, "failed to open browser automatically: %v\n", err)
-		fmt.Fprintf(os.Stderr, "open this URL manually to continue login:\n%s\n", authURL)
+		fmt.Fprintf(os.Stderr, "open this URL manually to continue login:\n%s\n", session.authURL)
 	}
 
-	var code string
+	go func() {
+		select {
+		case <-time.After(5 * time.Minute):
+			session.finish(nil, fmt.Errorf("authentication timed out; open %s", session.authURL))
+		case <-session.done:
+		}
+	}()
+
+	return OpenAICodexLoginStatus{
+		AuthURL:           session.authURL,
+		BrowserOpenFailed: session.browserOpenFailed,
+	}, nil
+}
+
+func PollOpenAICodexLogin() (*config.Account, bool, error) {
+	openAICodexLoginMu.Lock()
+	session := activeOpenAICodexLogin
+	if session == nil {
+		openAICodexLoginMu.Unlock()
+		return nil, true, ErrLoginCancelled
+	}
+	if !session.isDone() {
+		openAICodexLoginMu.Unlock()
+		return nil, false, nil
+	}
+	activeOpenAICodexLogin = nil
+	openAICodexLoginMu.Unlock()
+	return session.result, true, session.err
+}
+
+func CancelOpenAICodexLogin() error {
+	openAICodexLoginMu.Lock()
+	session := activeOpenAICodexLogin
+	activeOpenAICodexLogin = nil
+	openAICodexLoginMu.Unlock()
+	if session == nil {
+		return nil
+	}
+	session.finish(nil, ErrLoginCancelled)
+	return nil
+}
+
+func (s *openAICodexLoginSession) isDone() bool {
 	select {
-	case code = <-codeCh:
-	case err := <-errCh:
-		shutdownServer(server)
-		return nil, err
-	case <-time.After(5 * time.Minute):
-		shutdownServer(server)
-		return nil, fmt.Errorf("authentication timed out; open %s", authURL)
+	case <-s.done:
+		return true
+	default:
+		return false
 	}
+}
 
-	shutdownServer(server)
+func (s *openAICodexLoginSession) finish(account *config.Account, err error) {
+	s.finishOnce.Do(func() {
+		s.result = account
+		s.err = err
+		if s.server != nil {
+			shutdownServer(s.server)
+		}
+		if s.listener != nil {
+			_ = s.listener.Close()
+		}
+		close(s.done)
+	})
+}
 
-	tokenResp, err := exchangeCodeForToken(code, verifier)
-	if err != nil {
-		return nil, err
-	}
-
+func accountFromTokenResponse(tokenResp *tokenExchangeResponse) (*config.Account, error) {
 	account := &config.Account{
 		AccessToken:  tokenResp.AccessToken,
 		RefreshToken: tokenResp.RefreshToken,
@@ -287,4 +403,8 @@ func openBrowser(url string) error {
 	}
 
 	return nil
+}
+
+func OpenBrowserURL(url string) error {
+	return openBrowser(url)
 }

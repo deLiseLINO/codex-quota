@@ -197,7 +197,10 @@ func (m Model) toggleViewMode() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) beginAddAccount() (tea.Model, tea.Cmd) {
-	m.Loading = true
+	if m.AddAccountLoginVisible {
+		return m, nil
+	}
+	m.Loading = false
 	m.Err = nil
 	m.resetHelpState()
 	m.resetActionMenuState()
@@ -205,7 +208,7 @@ func (m Model) beginAddAccount() (tea.Model, tea.Cmd) {
 	m.resetApplyState()
 	m.ShowInfo = false
 	m.Notice = ""
-	return m, AddAccountCmd()
+	return m, StartAddAccountLoginCmd()
 }
 
 func (m Model) beginApplyFlow() (tea.Model, tea.Cmd) {

@@ -178,6 +178,7 @@ func runInteractive(stdout, stderr io.Writer) error {
 			startupUpdate,
 		),
 		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	)
 	if settings.CheckForUpdateOnStartup && update.ShouldRefresh(updateState, time.Now()) {
 		startBackgroundRefresh(program, updateState, method, currentVersion, settings)

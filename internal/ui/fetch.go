@@ -2,7 +2,9 @@ package ui
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -13,13 +15,95 @@ import (
 	"github.com/deLiseLINO/codex-quota/internal/config"
 )
 
-func AddAccountCmd() tea.Cmd {
+func StartAddAccountLoginCmd() tea.Cmd {
 	return func() tea.Msg {
-		account, err := auth.LoginOpenAICodex()
+		status, err := auth.StartOpenAICodexLogin()
 		if err != nil {
 			return ErrMsg{Err: fmt.Errorf("login failed: %w", err)}
 		}
-		if err := config.UpsertManagedAccount(account); err != nil {
+		return AddAccountLoginStartedMsg{
+			AuthURL:           status.AuthURL,
+			BrowserOpenFailed: status.BrowserOpenFailed,
+		}
+	}
+}
+
+func PollAddAccountLoginCmd() tea.Cmd {
+	return tea.Tick(300*time.Millisecond, func(_ time.Time) tea.Msg {
+		account, done, err := auth.PollOpenAICodexLogin()
+		if !done {
+			return AddAccountLoginPendingMsg{}
+		}
+		return AddAccountLoginFinishedMsg{Account: account, Err: err}
+	})
+}
+
+func CancelAddAccountLoginCmd() tea.Cmd {
+	return func() tea.Msg {
+		_ = auth.CancelOpenAICodexLogin()
+		return nil
+	}
+}
+
+func CopyToClipboardCmd(text string) tea.Cmd {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	return func() tea.Msg {
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("pbcopy")
+		case "windows":
+			cmd = exec.Command("cmd", "/c", "clip")
+		default:
+			if _, err := exec.LookPath("wl-copy"); err == nil {
+				cmd = exec.Command("wl-copy")
+				break
+			}
+			if _, err := exec.LookPath("xclip"); err == nil {
+				cmd = exec.Command("xclip", "-selection", "clipboard")
+				break
+			}
+			if _, err := exec.LookPath("xsel"); err == nil {
+				cmd = exec.Command("xsel", "--clipboard", "--input")
+				break
+			}
+			return AddAccountLoginCopyResultMsg{Err: fmt.Errorf("no clipboard command found")}
+		}
+
+		cmd.Stdin = strings.NewReader(text)
+		if err := cmd.Run(); err != nil {
+			return AddAccountLoginCopyResultMsg{Err: fmt.Errorf("failed to copy URL: %w", err)}
+		}
+		return AddAccountLoginCopyResultMsg{Text: "Copied URL to clipboard."}
+	}
+}
+
+func OpenAddAccountLoginURLCmd(url string) tea.Cmd {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return nil
+	}
+
+	return func() tea.Msg {
+		if err := auth.OpenBrowserURL(url); err != nil {
+			return AddAccountLoginCopyResultMsg{Err: fmt.Errorf("failed to open browser: %w", err)}
+		}
+		return AddAccountLoginCopyResultMsg{Text: "Opened authorization URL in browser."}
+	}
+}
+
+func FinalizeAddAccountLoginCmd(account *config.Account) tea.Cmd {
+	accountSnapshot := cloneAccount(account)
+	if accountSnapshot == nil {
+		return nil
+	}
+
+	return func() tea.Msg {
+		if err := config.UpsertManagedAccount(accountSnapshot); err != nil {
 			return ErrMsg{Err: fmt.Errorf("failed to save account: %w", err)}
 		}
 
@@ -29,12 +113,12 @@ func AddAccountCmd() tea.Cmd {
 		}
 
 		note := "account added"
-		if account.Email != "" {
-			note = "account added: " + account.Email
+		if accountSnapshot.Email != "" {
+			note = "account added: " + accountSnapshot.Email
 		}
 
 		return AccountsMsg{
-			ActiveKey:               account.AccountID,
+			ActiveKey:               accountSnapshot.AccountID,
 			Accounts:                result.Accounts,
 			SourcesByAccountID:      result.SourcesByAccountID,
 			ActiveSourcesByIdentity: result.ActiveSourcesByIdentity,

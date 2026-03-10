@@ -37,6 +37,23 @@ type NoticeTimeoutMsg struct {
 	Seq int
 }
 
+type AddAccountLoginStartedMsg struct {
+	AuthURL           string
+	BrowserOpenFailed bool
+}
+
+type AddAccountLoginPendingMsg struct{}
+
+type AddAccountLoginFinishedMsg struct {
+	Account *config.Account
+	Err     error
+}
+
+type AddAccountLoginCopyResultMsg struct {
+	Text string
+	Err  error
+}
+
 type UpdateAvailableMsg struct {
 	Version string
 	Method  update.Method

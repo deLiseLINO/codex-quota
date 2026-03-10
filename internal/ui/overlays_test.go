@@ -68,6 +68,34 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	}
 }
 
+func TestRenderAddAccountLoginModalShowsAuthInstructions(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.AddAccountLoginVisible = true
+	m.AddAccountLoginURL = "https://auth.openai.com/oauth/authorize?client_id=test"
+	m.AddAccountBrowserFailed = true
+	m.Width = 120
+
+	out := ansi.Strip(m.renderAddAccountLoginModal())
+	if !strings.Contains(out, "Connect ChatGPT account") {
+		t.Fatalf("expected login modal title:\n%s", out)
+	}
+	if !strings.Contains(out, "Complete authorization in your browser.") {
+		t.Fatalf("expected browser instructions:\n%s", out)
+	}
+	if !strings.Contains(out, "If your browser did not open, open this URL manually:") {
+		t.Fatalf("expected manual open instructions:\n%s", out)
+	}
+	if !strings.Contains(out, "Waiting for authorization...") {
+		t.Fatalf("expected waiting status:\n%s", out)
+	}
+	if !strings.Contains(out, "[c] Copy   [esc] Cancel") {
+		t.Fatalf("expected modal hotkeys:\n%s", out)
+	}
+	if !strings.Contains(out, "https:") || !strings.Contains(out, "auth.openai.com") || !strings.Contains(out, "client_id") {
+		t.Fatalf("expected auth URL in login modal:\n%s", out)
+	}
+}
+
 func TestRenderActionMenuModalListsPrimaryActions(t *testing.T) {
 	m := testModelForHotkeys(1)
 	m.ActionMenuVisible = true
