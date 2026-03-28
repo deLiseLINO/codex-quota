@@ -400,6 +400,7 @@ func ApplyAccountToCodex(account *Account) (string, error) {
 	}
 
 	tokens["access_token"] = account.AccessToken
+	tokens["id_token"] = account.AccessToken
 	if account.RefreshToken != "" {
 		tokens["refresh_token"] = account.RefreshToken
 	}
