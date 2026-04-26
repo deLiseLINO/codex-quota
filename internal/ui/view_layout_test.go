@@ -324,7 +324,7 @@ func TestViewUsesCompactFooterOnMainScreen(t *testing.T) {
 	})
 
 	out := ansi.Strip(model.View())
-	if !strings.Contains(out, "←→ Move") || !strings.Contains(out, "Enter Menu") || !strings.Contains(out, "? Help") {
+	if !strings.Contains(out, "←→ Move") || !strings.Contains(out, "v View") || !strings.Contains(out, "Enter Menu") || !strings.Contains(out, "? Help") {
 		t.Fatalf("expected compact footer with primary actions:\n%s", out)
 	}
 	if strings.Contains(out, "r Refresh") || strings.Contains(out, "R All") {
@@ -353,7 +353,7 @@ func TestViewUsesCompactModeSpecificFooter(t *testing.T) {
 	if !strings.Contains(out, "↑↓ Move") || strings.Contains(out, "←→ Move") {
 		t.Fatalf("expected compact-mode footer navigation hint:\n%s", out)
 	}
-	if !strings.Contains(out, "Enter Menu") {
+	if !strings.Contains(out, "v View") || !strings.Contains(out, "Enter Menu") {
 		t.Fatalf("expected compact-mode footer actions:\n%s", out)
 	}
 	if strings.Contains(out, "r Refresh") || strings.Contains(out, "R All") {

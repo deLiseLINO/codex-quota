@@ -106,9 +106,9 @@ func (m Model) renderHeader() string {
 
 func (m Model) renderFooter() string {
 	if m.CompactMode {
-		return "↑↓ Move • Enter Menu • ? Help • q Quit"
+		return "↑↓ Move • v View • Enter Menu • ? Help • q Quit"
 	}
-	return "←→ Move • Enter Menu • ? Help • q Quit"
+	return "←→ Move • v View • Enter Menu • ? Help • q Quit"
 }
 
 func (m Model) overlayUpdateHint(base string) string {

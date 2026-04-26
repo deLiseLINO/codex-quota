@@ -82,6 +82,9 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	if !strings.Contains(out, "o          Apply to Codex/OpenCode") {
 		t.Fatalf("expected apply action in primary help:\n%s", out)
 	}
+	if !strings.Contains(out, "v          Switch view mode") {
+		t.Fatalf("expected switch view action in primary help:\n%s", out)
+	}
 	if strings.Contains(out, "Use the actions menu for secondary tasks") {
 		t.Fatalf("did not expect explanatory note in help modal:\n%s", out)
 	}
