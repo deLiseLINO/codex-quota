@@ -237,6 +237,7 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine(primaryMove, "Move between accounts"),
 		renderHelpLine("Enter", "Open account menu"),
 		renderHelpLine("o", "Apply to Codex/OpenCode"),
+		renderHelpLine("v", "Switch view mode"),
 		renderHelpLine("r", "Refresh active account"),
 		renderHelpLine("R", "Refresh all accounts"),
 		renderHelpLine("?", "Open or close this help"),
