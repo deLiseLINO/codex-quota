@@ -97,10 +97,15 @@ var (
 	SourceOpenCodeBadgeActiveStyle = lipgloss.NewStyle().
 					Bold(true).
 					Foreground(lipgloss.Color("39"))
+	SourcePiBadgeActiveStyle = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color("214"))
 	SourceCodexBadgeMutedStyle = lipgloss.NewStyle().
 					Foreground(lipgloss.Color("176"))
 	SourceOpenCodeBadgeMutedStyle = lipgloss.NewStyle().
 					Foreground(lipgloss.Color("31"))
+	SourcePiBadgeMutedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("172"))
 	SourceBadgeSeparatorStyle = lipgloss.NewStyle().
 					Foreground(lipgloss.Color("240"))
 

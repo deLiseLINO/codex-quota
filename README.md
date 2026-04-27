@@ -9,8 +9,8 @@ A TUI for switching between Codex accounts and monitoring quota usage, written i
 ## Features
 
 - Fast account switching across many accounts
-- Multi-target apply: set active account for Codex and/or OpenCode in one flow
-- Accounts from local app storage, OpenCode auth, and Codex auth
+- Multi-target apply: set active account for Codex, OpenCode, and/or Pi Coding Agent in one flow
+- Accounts from local app storage, OpenCode auth, Codex auth, and Pi Coding Agent auth
 - OAuth authentication via browser
 - Two view modes: compact for many accounts, tabs for focused viewing when you have just a few.
 ## Installation
@@ -53,7 +53,7 @@ Typical flow:
 1. Press `n` to add/import account via OAuth.
 2. Move between accounts with arrows.
 3. Press `Enter` to open the actions menu for the active account and app-level actions.
-4. Press `o` to apply the active account to Codex/OpenCode.
+4. Press `o` to apply the active account to Codex/OpenCode/Pi.
 5. Use `r`/`R` to refresh quota and `?` for grouped keyboard help.
 
 ## Controls
@@ -69,7 +69,7 @@ Typical flow:
 Additional shortcuts:
 
 - `h` `j` `k` `l` — Vim-style navigation
-- `o` — apply active account to Codex/OpenCode
+- `o` — apply active account to Codex/OpenCode/Pi
 - `i` — toggle additional info
 - `n` — add account (OAuth)
 - `x` — delete active account

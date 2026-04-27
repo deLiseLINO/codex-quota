@@ -35,7 +35,7 @@ func (m Model) actionMenuSections() []actionMenuSection {
 		{
 			Title: "Current account",
 			Items: []actionMenuItem{
-				{ID: actionMenuApply, Label: "Apply to Codex/OpenCode", Shortcut: "o"},
+				{ID: actionMenuApply, Label: "Apply to Codex/OpenCode/Pi", Shortcut: "o"},
 				{ID: actionMenuRefresh, Label: "Refresh quota", Shortcut: "r"},
 				{ID: actionMenuInfo, Label: "Account details", Shortcut: "i"},
 				{ID: actionMenuDelete, Label: "Delete account", Shortcut: "x"},

@@ -13,6 +13,7 @@ func (m Model) activeSourceBadgesForAccount(account *config.Account) string {
 
 	hasCodex := false
 	hasOpenCode := false
+	hasPi := false
 	appendLabels := func(labels []string) {
 		for _, label := range labels {
 			source, ok := sourceFromLabel(label)
@@ -25,6 +26,9 @@ func (m Model) activeSourceBadgesForAccount(account *config.Account) string {
 			if source == config.SourceOpenCode {
 				hasOpenCode = true
 			}
+			if source == config.SourcePi {
+				hasPi = true
+			}
 		}
 	}
 
@@ -32,16 +36,19 @@ func (m Model) activeSourceBadgesForAccount(account *config.Account) string {
 		appendLabels(m.ActiveSourcesByIdentity[key])
 	}
 
-	if !hasCodex && !hasOpenCode {
+	if !hasCodex && !hasOpenCode && !hasPi {
 		return ""
 	}
 
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 3)
 	if hasCodex {
 		parts = append(parts, "C")
 	}
 	if hasOpenCode {
 		parts = append(parts, "O")
+	}
+	if hasPi {
+		parts = append(parts, "P")
 	}
 	return strings.Join(parts, "•")
 }
@@ -61,9 +68,11 @@ func (m Model) renderActiveSourceBadges(account *config.Account, isRowActive boo
 
 	cStyle := SourceCodexBadgeMutedStyle
 	oStyle := SourceOpenCodeBadgeMutedStyle
+	pStyle := SourcePiBadgeMutedStyle
 	if isRowActive {
 		cStyle = SourceCodexBadgeActiveStyle
 		oStyle = SourceOpenCodeBadgeActiveStyle
+		pStyle = SourcePiBadgeActiveStyle
 	}
 
 	var b strings.Builder
@@ -74,6 +83,8 @@ func (m Model) renderActiveSourceBadges(account *config.Account, isRowActive boo
 			b.WriteString(cStyle.Render("C"))
 		case 'O':
 			b.WriteString(oStyle.Render("O"))
+		case 'P':
+			b.WriteString(pStyle.Render("P"))
 		case '•':
 			b.WriteString(SourceBadgeSeparatorStyle.Render("•"))
 		default:

@@ -88,6 +88,8 @@ func accountPriority(account *Account) int {
 		score += 70
 	case SourceOpenCode:
 		score += 60
+	case SourcePi:
+		score += 55
 	case SourceCodex:
 		score += 50
 	}

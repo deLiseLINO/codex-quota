@@ -419,6 +419,42 @@ func ApplyAccountToCodex(account *Account) (string, error) {
 	return path, nil
 }
 
+func ApplyAccountToPi(account *Account) (string, error) {
+	if account == nil {
+		return "", fmt.Errorf("account is nil")
+	}
+	path := piAuthPath()
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("Pi auth path is unknown")
+	}
+
+	root, err := readJSONMap(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			root = make(map[string]any)
+		} else {
+			return "", fmt.Errorf("failed to read %s: %w", path, err)
+		}
+	}
+
+	credential := asMap(root[piOpenAICodexAuthKey])
+	if credential == nil {
+		credential = make(map[string]any)
+		root[piOpenAICodexAuthKey] = credential
+	}
+	populatePiCodexCredential(credential, account)
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", fmt.Errorf("failed to ensure directory for %s: %w", path, err)
+	}
+
+	if err := writeJSONMap(path, root); err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+
 func DeleteOpenCodeAuthAccount() error {
 	paths := opencodeExistingPaths()
 	if len(paths) == 0 {
@@ -527,6 +563,27 @@ func DeleteCodexAuthAccount() error {
 	changed = deleteMapKey(tokens, "refresh_token") || changed
 	changed = deleteMapKey(tokens, "account_id") || changed
 	if !changed {
+		return nil
+	}
+
+	return writeJSONMap(path, root)
+}
+
+func DeletePiAuthAccount() error {
+	path := piAuthPath()
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("Pi auth path is unknown")
+	}
+
+	root, err := readJSONMap(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	if !deleteMapKey(root, piOpenAICodexAuthKey) {
 		return nil
 	}
 

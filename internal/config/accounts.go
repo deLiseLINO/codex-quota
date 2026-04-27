@@ -11,6 +11,7 @@ const (
 	SourceManaged  Source = "managed"
 	SourceOpenCode Source = "opencode"
 	SourceCodex    Source = "codex"
+	SourcePi       Source = "pi"
 )
 
 type Account struct {
@@ -48,6 +49,8 @@ func (a *Account) SourceLabel() string {
 		return "opencode"
 	case SourceCodex:
 		return "codex"
+	case SourcePi:
+		return "pi"
 	default:
 		return "unknown"
 	}
@@ -79,6 +82,11 @@ func SaveAccount(account *Account) error {
 			return nil
 		}
 		return saveCodexAccount(account)
+	case SourcePi:
+		if account.FilePath == "" {
+			return nil
+		}
+		return savePiCodexAccount(account)
 	default:
 		return nil
 	}
@@ -94,6 +102,8 @@ func ApplyAccountToTarget(account *Account, target Source) (string, error) {
 		return ApplyAccountToOpenCode(account)
 	case SourceCodex:
 		return ApplyAccountToCodex(account)
+	case SourcePi:
+		return ApplyAccountToPi(account)
 	default:
 		return "", fmt.Errorf("unsupported apply target: %s", target)
 	}
@@ -104,13 +114,20 @@ func ApplyAccountToTargets(account *Account, targets []Source) (map[Source]strin
 	errorsBySource := make(map[Source]error)
 
 	if account == nil {
-		errorsBySource[SourceCodex] = fmt.Errorf("account is nil")
+		for _, target := range targets {
+			if target == SourceCodex || target == SourceOpenCode || target == SourcePi {
+				errorsBySource[target] = fmt.Errorf("account is nil")
+			}
+		}
+		if len(errorsBySource) == 0 {
+			errorsBySource[SourceCodex] = fmt.Errorf("account is nil")
+		}
 		return paths, errorsBySource
 	}
 
 	seen := make(map[Source]bool, len(targets))
 	for _, target := range targets {
-		if target != SourceCodex && target != SourceOpenCode {
+		if target != SourceCodex && target != SourceOpenCode && target != SourcePi {
 			continue
 		}
 		if seen[target] {
@@ -141,6 +158,8 @@ func DeleteAccountFromSource(account *Account, source Source) error {
 		return DeleteOpenCodeAuthAccount()
 	case SourceCodex:
 		return DeleteCodexAuthAccount()
+	case SourcePi:
+		return DeletePiAuthAccount()
 	default:
 		return fmt.Errorf("unsupported source: %s", source)
 	}
