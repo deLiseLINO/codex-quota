@@ -203,14 +203,6 @@ func (m Model) handleApplyTargetSelection(keyStr string) (tea.Model, tea.Cmd) {
 	case " ":
 		m.toggleCurrentApplyTargetSelection()
 		return m, nil
-	case "1":
-		m.ApplyTargetCursor = 0
-		m.toggleCurrentApplyTargetSelection()
-		return m, nil
-	case "2":
-		m.ApplyTargetCursor = 1
-		m.toggleCurrentApplyTargetSelection()
-		return m, nil
 	case "a":
 		m.setApplyTargetsAll(true)
 		return m, nil
@@ -221,6 +213,14 @@ func (m Model) handleApplyTargetSelection(keyStr string) (tea.Model, tea.Cmd) {
 		m.ApplyTargetSelect = false
 		m.ApplyConfirm = true
 		return m, nil
+	}
+
+	if len(keyStr) == 1 && keyStr[0] >= '1' && keyStr[0] <= '9' {
+		index := int(keyStr[0] - '1')
+		if index >= 0 && index < len(applyTargetsOrdered()) {
+			m.ApplyTargetCursor = index
+			m.toggleCurrentApplyTargetSelection()
+		}
 	}
 
 	return m, nil

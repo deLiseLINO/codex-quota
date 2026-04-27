@@ -212,6 +212,9 @@ func TestApplyHotkeyOpensApplyFlow(t *testing.T) {
 	if got.ActionMenuVisible {
 		t.Fatalf("did not expect action menu to open")
 	}
+	if !got.ApplyTargets[config.SourceCodex] || !got.ApplyTargets[config.SourceOpenCode] || !got.ApplyTargets[config.SourcePi] {
+		t.Fatalf("expected codex, opencode, and pi apply targets to be selected by default: %#v", got.ApplyTargets)
+	}
 }
 
 func TestActionMenuApplyOpensApplyFlow(t *testing.T) {

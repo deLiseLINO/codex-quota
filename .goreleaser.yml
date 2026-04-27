@@ -56,7 +56,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/deLiseLINO/codex-quota"
-    description: "Terminal account switcher and quota monitor for Codex/OpenCode"
+    description: "Terminal account switcher and quota monitor for Codex/OpenCode/Pi"
     license: "MIT"
     test: |
       system "#{bin}/cq", "--help"

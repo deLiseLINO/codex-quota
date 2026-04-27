@@ -70,6 +70,19 @@ func codexAuthPath() string {
 	return filepath.Join(home, ".codex", "auth.json")
 }
 
+func piAuthPath() string {
+	if dir := cleanPath(os.Getenv("PI_CODING_AGENT_DIR")); dir != "" {
+		return filepath.Join(dir, "auth.json")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	return filepath.Join(home, ".pi", "agent", "auth.json")
+}
+
 func firstExistingPath(paths []string) string {
 	for _, path := range paths {
 		if path == "" {

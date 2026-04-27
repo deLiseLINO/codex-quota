@@ -261,12 +261,13 @@ func (m *Model) startApplyFlow() {
 	m.ApplyTargets = map[config.Source]bool{
 		config.SourceCodex:    true,
 		config.SourceOpenCode: true,
+		config.SourcePi:       true,
 	}
 	m.ApplyTargetCursor = 0
 }
 
 func (m *Model) toggleApplyTargetSelection(source config.Source) {
-	if source != config.SourceCodex && source != config.SourceOpenCode {
+	if source != config.SourceCodex && source != config.SourceOpenCode && source != config.SourcePi {
 		return
 	}
 	if m.ApplyTargets == nil {
@@ -308,7 +309,7 @@ func (m *Model) setApplyTargetsAll(selected bool) {
 }
 
 func (m Model) selectedApplyTargets() []config.Source {
-	targets := make([]config.Source, 0, 2)
+	targets := make([]config.Source, 0, 3)
 	for _, source := range applyTargetsOrdered() {
 		if m.ApplyTargets != nil && m.ApplyTargets[source] {
 			targets = append(targets, source)
@@ -328,13 +329,13 @@ func (m Model) selectedApplyTargetCount() int {
 }
 
 func applyTargetsOrdered() []config.Source {
-	return []config.Source{config.SourceCodex, config.SourceOpenCode}
+	return []config.Source{config.SourceCodex, config.SourceOpenCode, config.SourcePi}
 }
 
 func dedupeApplyTargets(targets []config.Source) []config.Source {
 	seen := map[config.Source]bool{}
 	for _, target := range targets {
-		if target != config.SourceCodex && target != config.SourceOpenCode {
+		if target != config.SourceCodex && target != config.SourceOpenCode && target != config.SourcePi {
 			continue
 		}
 		seen[target] = true
@@ -380,7 +381,7 @@ func (m Model) deletableSourcesForAccount(account *config.Account) []config.Sour
 	seen := m.collectKnownSourcesForAccount(account)
 
 	if len(seen) == 0 {
-		if account.Source == config.SourceManaged || account.Source == config.SourceOpenCode || account.Source == config.SourceCodex {
+		if account.Source == config.SourceManaged || account.Source == config.SourceOpenCode || account.Source == config.SourceCodex || account.Source == config.SourcePi {
 			seen[account.Source] = true
 		}
 	}
@@ -431,7 +432,7 @@ func orderedSources(sourceMap map[config.Source]bool) []config.Source {
 		return nil
 	}
 
-	ordered := []config.Source{config.SourceManaged, config.SourceOpenCode, config.SourceCodex}
+	ordered := []config.Source{config.SourceManaged, config.SourceOpenCode, config.SourceCodex, config.SourcePi}
 	out := make([]config.Source, 0, len(sourceMap))
 	for _, source := range ordered {
 		if sourceMap[source] {
@@ -449,6 +450,8 @@ func sourceFromLabel(label string) (config.Source, bool) {
 		return config.SourceOpenCode, true
 	case "codex":
 		return config.SourceCodex, true
+	case "pi", "pi coding agent":
+		return config.SourcePi, true
 	default:
 		return "", false
 	}
@@ -457,7 +460,7 @@ func sourceFromLabel(label string) (config.Source, bool) {
 func dedupeSources(sources []config.Source) []config.Source {
 	seen := make(map[config.Source]bool, len(sources))
 	for _, source := range sources {
-		if source != config.SourceManaged && source != config.SourceOpenCode && source != config.SourceCodex {
+		if source != config.SourceManaged && source != config.SourceOpenCode && source != config.SourceCodex && source != config.SourcePi {
 			continue
 		}
 		seen[source] = true
@@ -473,6 +476,8 @@ func sourceDisplayName(source config.Source) string {
 		return "opencode"
 	case config.SourceCodex:
 		return "codex"
+	case config.SourcePi:
+		return "pi"
 	default:
 		return string(source)
 	}

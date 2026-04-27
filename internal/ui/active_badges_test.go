@@ -30,6 +30,25 @@ func TestActiveSourceBadgesForAccount(t *testing.T) {
 	}
 }
 
+func TestActiveSourceBadgesForAccount_IncludesPi(t *testing.T) {
+	account := &config.Account{
+		Key:       "acc-1",
+		Label:     "user@example.com",
+		Email:     "user@example.com",
+		AccountID: "acc-1",
+		Source:    config.SourceManaged,
+		Writable:  true,
+	}
+
+	m := InitialModel([]*config.Account{account}, map[string][]string{}, map[string][]string{
+		"account:acc-1": []string{"codex", "opencode", "pi"},
+	}, false)
+
+	if got := m.activeSourceBadgesForAccount(account); got != "C•O•P" {
+		t.Fatalf("badges mismatch: got %q, want %q", got, "C•O•P")
+	}
+}
+
 func TestRenderAccountTabs_ShowsActiveBadges(t *testing.T) {
 	account := &config.Account{
 		Key:       "acc-1",

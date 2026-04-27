@@ -15,7 +15,7 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 	if err != nil {
 		return AccountsLoadResult{}, err
 	}
-	externalAccounts := make([]*Account, 0, 4)
+	externalAccounts := make([]*Account, 0, 5)
 
 	opencodePaths := opencodeAuthPaths()
 	writable := firstExistingPath(opencodePaths)
@@ -39,6 +39,14 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 	}
 	if codexAccount != nil {
 		externalAccounts = append(externalAccounts, codexAccount)
+	}
+
+	piAccount, err := loadPiCodexAccountFile(piAuthPath())
+	if err != nil {
+		return AccountsLoadResult{}, err
+	}
+	if piAccount != nil {
+		externalAccounts = append(externalAccounts, piAccount)
 	}
 
 	activeOpenCodeAccount, err := loadOpenCodeAccountFile(opencodeAuthPath(), SourceOpenCode, true)
@@ -74,6 +82,7 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 	activeSourcesByIdentity := make(map[string][]string)
 	appendActiveSource(activeSourcesByIdentity, codexAccount, SourceCodex)
 	appendActiveSource(activeSourcesByIdentity, activeOpenCodeAccount, SourceOpenCode)
+	appendActiveSource(activeSourcesByIdentity, piAccount, SourcePi)
 
 	accounts = dedupeAccounts(accounts)
 	for _, account := range accounts {
@@ -95,7 +104,7 @@ func appendActiveSource(target map[string][]string, account *Account, source Sou
 	if target == nil || account == nil {
 		return
 	}
-	if source != SourceCodex && source != SourceOpenCode {
+	if source != SourceCodex && source != SourceOpenCode && source != SourcePi {
 		return
 	}
 
@@ -321,6 +330,56 @@ func loadCodexAccountFile(path string) (*Account, error) {
 	return account, nil
 }
 
+const piOpenAICodexAuthKey = "openai-codex"
+
+func loadPiCodexAccountFile(path string) (*Account, error) {
+	root, err := readJSONMap(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	credential := asMap(root[piOpenAICodexAuthKey])
+	if credential == nil {
+		return nil, nil
+	}
+	if credentialType := strings.TrimSpace(asString(credential["type"])); credentialType != "" && credentialType != "oauth" {
+		return nil, nil
+	}
+
+	accessToken := strings.TrimSpace(asString(credential["access"]))
+	if accessToken == "" {
+		return nil, nil
+	}
+
+	account := &Account{
+		AccessToken:  accessToken,
+		RefreshToken: strings.TrimSpace(asString(credential["refresh"])),
+		AccountID:    strings.TrimSpace(asString(credential["accountId"])),
+		Source:       SourcePi,
+		FilePath:     path,
+		Writable:     true,
+	}
+	if account.AccountID == "" {
+		account.AccountID = strings.TrimSpace(asString(credential["account_id"]))
+	}
+	if expiresMillis, ok := asInt64(credential["expires"]); ok && expiresMillis > 0 {
+		account.ExpiresAt = time.UnixMilli(expiresMillis)
+	}
+
+	claims := ParseAccessToken(accessToken)
+	account.AccountID = CanonicalAccountID(account.AccountID, claims.AccountID)
+	account.ClientID = claims.ClientID
+	if account.ExpiresAt.IsZero() {
+		account.ExpiresAt = claims.ExpiresAt
+	}
+	account.Email = claims.Email
+
+	return account, nil
+}
+
 func saveOpenCodeAccount(account *Account) error {
 	root, err := readJSONMap(account.FilePath)
 	if err != nil {
@@ -370,6 +429,57 @@ func saveCodexAccount(account *Account) error {
 	root["last_refresh"] = time.Now().UTC().Format(time.RFC3339)
 
 	return writeJSONMap(account.FilePath, root)
+}
+
+func savePiCodexAccount(account *Account) error {
+	root, err := readJSONMap(account.FilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", account.FilePath, err)
+	}
+
+	credential := asMap(root[piOpenAICodexAuthKey])
+	if credential == nil {
+		credential = make(map[string]any)
+		root[piOpenAICodexAuthKey] = credential
+	}
+
+	populatePiCodexCredential(credential, account)
+	return writeJSONMap(account.FilePath, root)
+}
+
+func populatePiCodexCredential(credential map[string]any, account *Account) {
+	if credential == nil || account == nil {
+		return
+	}
+
+	accountID := strings.TrimSpace(account.AccountID)
+	expiresAt := account.ExpiresAt
+	if accountID == "" || expiresAt.IsZero() {
+		claims := ParseAccessToken(account.AccessToken)
+		accountID = CanonicalAccountID(accountID, claims.AccountID)
+		if expiresAt.IsZero() {
+			expiresAt = claims.ExpiresAt
+		}
+	}
+
+	credential["type"] = "oauth"
+	credential["access"] = account.AccessToken
+	if account.RefreshToken != "" {
+		credential["refresh"] = account.RefreshToken
+	} else {
+		delete(credential, "refresh")
+	}
+	if accountID != "" {
+		credential["accountId"] = accountID
+	} else {
+		delete(credential, "accountId")
+	}
+	delete(credential, "account_id")
+	if !expiresAt.IsZero() {
+		credential["expires"] = expiresAt.UnixMilli()
+	} else {
+		delete(credential, "expires")
+	}
 }
 
 func finalizeAccount(account *Account) {
