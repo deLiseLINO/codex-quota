@@ -167,6 +167,7 @@ func UpsertManagedAccount(account *Account) error {
 
 func mergeManagedAccount(existing, incoming managedAccount) managedAccount {
 	merged := existing
+	existingExpiresAt := merged.ExpiresAt
 
 	if strings.TrimSpace(merged.Label) == "" {
 		merged.Label = incoming.Label
@@ -181,11 +182,7 @@ func mergeManagedAccount(existing, incoming managedAccount) managedAccount {
 		merged.RefreshToken = incoming.RefreshToken
 	}
 
-	if merged.ExpiresAt == 0 {
-		merged.ExpiresAt = incoming.ExpiresAt
-	}
-
-	if incoming.ExpiresAt > 0 && (merged.ExpiresAt == 0 || incoming.ExpiresAt > merged.ExpiresAt) {
+	if incoming.ExpiresAt > 0 && (existingExpiresAt == 0 || incoming.ExpiresAt > existingExpiresAt) {
 		merged.AccessToken = incoming.AccessToken
 		merged.ExpiresAt = incoming.ExpiresAt
 		if strings.TrimSpace(incoming.RefreshToken) != "" {
@@ -194,6 +191,10 @@ func mergeManagedAccount(existing, incoming managedAccount) managedAccount {
 		if strings.TrimSpace(incoming.ClientID) != "" {
 			merged.ClientID = incoming.ClientID
 		}
+	}
+
+	if merged.ExpiresAt == 0 {
+		merged.ExpiresAt = incoming.ExpiresAt
 	}
 
 	if strings.TrimSpace(merged.AccessToken) == "" {
@@ -310,6 +311,10 @@ func DeleteManagedAccountByIdentity(account *Account) error {
 }
 
 func ApplyAccountToOpenCode(account *Account) (string, error) {
+	return applyAccountToOpenCode(account, targetWriteApply)
+}
+
+func applyAccountToOpenCode(account *Account, mode targetWriteMode) (string, error) {
 	if account == nil {
 		return "", fmt.Errorf("account is nil")
 	}
@@ -320,6 +325,7 @@ func ApplyAccountToOpenCode(account *Account) (string, error) {
 
 	successPaths := make([]string, 0, len(paths))
 	errorsList := make([]string, 0)
+	skipped := false
 
 	for _, path := range paths {
 		root, err := readJSONMap(path)
@@ -338,18 +344,24 @@ func ApplyAccountToOpenCode(account *Account) (string, error) {
 			root["openai"] = openai
 		}
 
-		openai["access"] = account.AccessToken
-		if account.RefreshToken != "" {
-			openai["refresh"] = account.RefreshToken
+		accountToWrite := chooseTargetWriteAccount(account, buildOpenAIAccount(openai, SourceOpenCode, path, true), mode)
+		if accountToWrite == nil {
+			skipped = true
+			continue
 		}
-		if account.AccountID != "" {
-			openai["accountId"] = account.AccountID
+
+		openai["access"] = accountToWrite.AccessToken
+		if accountToWrite.RefreshToken != "" {
+			openai["refresh"] = accountToWrite.RefreshToken
 		}
-		if account.Email != "" {
-			openai["email"] = account.Email
+		if accountToWrite.AccountID != "" {
+			openai["accountId"] = accountToWrite.AccountID
 		}
-		if !account.ExpiresAt.IsZero() {
-			openai["expires"] = account.ExpiresAt.UnixMilli()
+		if accountToWrite.Email != "" {
+			openai["email"] = accountToWrite.Email
+		}
+		if !accountToWrite.ExpiresAt.IsZero() {
+			openai["expires"] = accountToWrite.ExpiresAt.UnixMilli()
 		}
 
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -366,6 +378,9 @@ func ApplyAccountToOpenCode(account *Account) (string, error) {
 	}
 
 	if len(successPaths) == 0 {
+		if skipped {
+			return "", nil
+		}
 		if len(errorsList) > 0 {
 			return "", fmt.Errorf("apply to OpenCode failed: %s", strings.Join(errorsList, "; "))
 		}
@@ -376,6 +391,10 @@ func ApplyAccountToOpenCode(account *Account) (string, error) {
 }
 
 func ApplyAccountToCodex(account *Account) (string, error) {
+	return applyAccountToCodex(account, targetWriteApply)
+}
+
+func applyAccountToCodex(account *Account, mode targetWriteMode) (string, error) {
 	if account == nil {
 		return "", fmt.Errorf("account is nil")
 	}
@@ -399,12 +418,17 @@ func ApplyAccountToCodex(account *Account) (string, error) {
 		root["tokens"] = tokens
 	}
 
-	tokens["access_token"] = account.AccessToken
-	if account.RefreshToken != "" {
-		tokens["refresh_token"] = account.RefreshToken
+	accountToWrite := chooseTargetWriteAccount(account, buildCodexAccountFromTokens(tokens, path), mode)
+	if accountToWrite == nil {
+		return "", nil
 	}
-	if account.AccountID != "" {
-		tokens["account_id"] = account.AccountID
+
+	tokens["access_token"] = accountToWrite.AccessToken
+	if accountToWrite.RefreshToken != "" {
+		tokens["refresh_token"] = accountToWrite.RefreshToken
+	}
+	if accountToWrite.AccountID != "" {
+		tokens["account_id"] = accountToWrite.AccountID
 	}
 	root["last_refresh"] = time.Now().UTC().Format(time.RFC3339)
 

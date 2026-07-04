@@ -299,9 +299,13 @@ func loadCodexAccountFile(path string) (*Account, error) {
 		return nil, nil
 	}
 
+	return buildCodexAccountFromTokens(tokens, path), nil
+}
+
+func buildCodexAccountFromTokens(tokens map[string]any, path string) *Account {
 	accessToken := strings.TrimSpace(asString(tokens["access_token"]))
 	if accessToken == "" {
-		return nil, nil
+		return nil
 	}
 
 	account := &Account{
@@ -318,7 +322,7 @@ func loadCodexAccountFile(path string) (*Account, error) {
 	account.ClientID = claims.ClientID
 	account.ExpiresAt = claims.ExpiresAt
 
-	return account, nil
+	return account
 }
 
 func saveOpenCodeAccount(account *Account) error {

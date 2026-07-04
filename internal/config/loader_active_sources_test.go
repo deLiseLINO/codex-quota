@@ -12,6 +12,8 @@ func TestLoadAllAccountsWithSources_PopulatesActiveSourcesByIdentity(t *testing.
 	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
 	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
 	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(tmp, "opencode", "auth.json"))
+	t.Setenv("OPENCODE_DATA_DIR", filepath.Join(tmp, "opencode-data"))
+	t.Setenv("HOME", filepath.Join(tmp, "home"))
 
 	codexPath := filepath.Join(tmp, "codex", "auth.json")
 	if err := os.MkdirAll(filepath.Dir(codexPath), 0o700); err != nil {

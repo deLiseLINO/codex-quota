@@ -133,12 +133,9 @@ func chooseTokenState(primary, secondary *Account) (string, time.Time) {
 		return primary.AccessToken, primary.ExpiresAt
 	}
 
-	if primary.ExpiresAt.IsZero() && !secondary.ExpiresAt.IsZero() {
-		return secondary.AccessToken, secondary.ExpiresAt
+	best := freshestAccountForIdentity(primary, []*Account{primary, secondary})
+	if best == nil {
+		return primary.AccessToken, primary.ExpiresAt
 	}
-	if !secondary.ExpiresAt.IsZero() && secondary.ExpiresAt.After(primary.ExpiresAt) {
-		return secondary.AccessToken, secondary.ExpiresAt
-	}
-
-	return primary.AccessToken, primary.ExpiresAt
+	return best.AccessToken, best.ExpiresAt
 }

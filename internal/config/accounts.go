@@ -88,12 +88,18 @@ func ApplyAccountToTarget(account *Account, target Source) (string, error) {
 	if account == nil {
 		return "", fmt.Errorf("account is nil")
 	}
+	accountToApply := account
+	if fresh, _, err := ResolveFreshAccount(account); err != nil {
+		return "", err
+	} else if fresh != nil {
+		accountToApply = fresh
+	}
 
 	switch target {
 	case SourceOpenCode:
-		return ApplyAccountToOpenCode(account)
+		return ApplyAccountToOpenCode(accountToApply)
 	case SourceCodex:
-		return ApplyAccountToCodex(account)
+		return ApplyAccountToCodex(accountToApply)
 	default:
 		return "", fmt.Errorf("unsupported apply target: %s", target)
 	}

@@ -51,6 +51,11 @@ func RefreshToken(account *config.Account) error {
 	if account == nil {
 		return fmt.Errorf("account is nil")
 	}
+	if fresh, changed, err := config.ResolveFreshAccount(account); err != nil {
+		return fmt.Errorf("failed to resolve fresh account before refresh: %w", err)
+	} else if changed && fresh != nil {
+		copyResolvedAccount(account, fresh)
+	}
 	if account.RefreshToken == "" {
 		return fmt.Errorf("refresh token is missing")
 	}
@@ -126,9 +131,25 @@ func RefreshToken(account *config.Account) error {
 		account.ExpiresAt = claims.ExpiresAt
 	}
 
-	if err := config.SaveAccount(account); err != nil {
+	if err := config.SyncAccountEverywhere(account); err != nil {
 		return fmt.Errorf("failed to persist refreshed token: %w", err)
 	}
 
 	return nil
+}
+
+func copyResolvedAccount(target, source *config.Account) {
+	if target == nil || source == nil {
+		return
+	}
+	target.Label = source.Label
+	target.Email = source.Email
+	target.AccountID = source.AccountID
+	target.AccessToken = source.AccessToken
+	target.RefreshToken = source.RefreshToken
+	target.ExpiresAt = source.ExpiresAt
+	target.ClientID = source.ClientID
+	target.Source = source.Source
+	target.FilePath = source.FilePath
+	target.Writable = source.Writable
 }

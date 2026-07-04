@@ -232,18 +232,34 @@ func FetchDataCmd(account *config.Account) tea.Cmd {
 	return func() tea.Msg {
 		workingAccount := *accountSnapshot
 		reloadAccounts := false
+		if changed, err := reconcileWorkingAccount(&workingAccount); err != nil {
+			return ErrMsg{AccountKey: accountKey, Err: fmt.Errorf("failed to reload auth state: %w", err)}
+		} else if changed {
+			reloadAccounts = true
+		}
 
 		if auth.IsExpired(&workingAccount) {
 			if err := auth.RefreshToken(&workingAccount); err != nil {
 				return ErrMsg{AccountKey: accountKey, Err: fmt.Errorf("token refresh failed: %w", err)}
 			}
+			reloadAccounts = true
 		}
 
 		data, err := api.CallAPI(workingAccount.AccessToken, workingAccount.AccountID)
+		if err != nil && api.IsUnauthorized(err) {
+			if changed, reloadErr := reconcileWorkingAccount(&workingAccount); reloadErr != nil {
+				return ErrMsg{AccountKey: accountKey, Err: fmt.Errorf("failed to reload auth state: %w", reloadErr)}
+			} else if changed {
+				reloadAccounts = true
+				data, err = api.CallAPI(workingAccount.AccessToken, workingAccount.AccountID)
+			}
+		}
+
 		if err != nil && api.IsUnauthorized(err) && workingAccount.RefreshToken != "" {
 			if refreshErr := auth.RefreshToken(&workingAccount); refreshErr != nil {
 				return ErrMsg{AccountKey: accountKey, Err: fmt.Errorf("token refresh failed: %w", refreshErr)}
 			}
+			reloadAccounts = true
 			data, err = api.CallAPI(workingAccount.AccessToken, workingAccount.AccountID)
 		}
 
@@ -276,6 +292,21 @@ func FetchDataCmd(account *config.Account) tea.Cmd {
 			ReloadActiveKey: reloadActiveKey,
 		}
 	}
+}
+
+func reconcileWorkingAccount(account *config.Account) (bool, error) {
+	if account == nil {
+		return false, nil
+	}
+	fresh, changed, err := config.ResolveFreshAccount(account)
+	if err != nil {
+		return false, err
+	}
+	if fresh == nil || !changed {
+		return false, nil
+	}
+	*account = *fresh
+	return true, nil
 }
 
 func ReloadAccountsCmd(activeKey string) tea.Cmd {
