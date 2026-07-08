@@ -30,6 +30,7 @@ const (
 	homebrewFormulaURL    = "https://raw.githubusercontent.com/deLiseLINO/homebrew-tap/main/Formula/codex-quota.rb"
 	releasesPageURL       = "https://github.com/deLiseLINO/codex-quota/releases"
 	goInstallTarget       = "github.com/deLiseLINO/codex-quota/cmd/cq@latest"
+	goInstallTargetPrefix = "github.com/deLiseLINO/codex-quota/cmd/cq@"
 	homebrewUpgradeTarget = "deLiseLINO/tap/codex-quota"
 )
 
@@ -260,32 +261,39 @@ func parseVersion(raw string) ([3]uint64, bool) {
 	return version, true
 }
 
-func Command(method Method) (string, []string, bool) {
+func Command(method Method, latestVersion string) (string, []string, bool) {
 	switch method {
 	case MethodBrew:
 		return "brew", []string{"upgrade", homebrewUpgradeTarget}, true
 	case MethodGo:
-		return "go", []string{"install", goInstallTarget}, true
+		return "go", []string{"install", goInstallTargetForVersion(latestVersion)}, true
 	default:
 		return "", nil, false
 	}
 }
 
-func CommandString(method Method) string {
-	command, args, ok := Command(method)
+func CommandString(method Method, latestVersion string) string {
+	command, args, ok := Command(method, latestVersion)
 	if !ok {
 		return ""
 	}
 	return strings.Join(append([]string{command}, args...), " ")
 }
 
-func RunUpgrade(method Method, stdout, stderr io.Writer) error {
-	command, args, ok := Command(method)
+func ReleaseNotesURL(version string) string {
+	if _, ok := parseVersion(version); !ok {
+		return releasesPageURL + "/latest"
+	}
+	return releasesPageURL + "/tag/v" + strings.TrimPrefix(strings.TrimSpace(version), "v")
+}
+
+func RunUpgrade(method Method, latestVersion string, stdout, stderr io.Writer) error {
+	command, args, ok := Command(method, latestVersion)
 	if !ok {
 		return fmt.Errorf("unsupported update method: %s", method)
 	}
 
-	fmt.Fprintf(stdout, "Updating cq via `%s`...\n", CommandString(method))
+	fmt.Fprintf(stdout, "Updating cq via `%s`...\n", CommandString(method, latestVersion))
 	cmd := exec.Command(command, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -296,6 +304,13 @@ func RunUpgrade(method Method, stdout, stderr io.Writer) error {
 
 	fmt.Fprintln(stdout, "Update completed. Restart cq.")
 	return nil
+}
+
+func goInstallTargetForVersion(version string) string {
+	if _, ok := parseVersion(version); !ok {
+		return goInstallTarget
+	}
+	return goInstallTargetPrefix + "v" + strings.TrimPrefix(strings.TrimSpace(version), "v")
 }
 
 func ManualUpgradeInstructions(currentVersion, latestVersion string) string {
@@ -309,8 +324,8 @@ func ManualUpgradeInstructions(currentVersion, latestVersion string) string {
 		"Automatic upgrade is unavailable because the installation method could not be determined.",
 		"Manual update options:",
 		fmt.Sprintf("  brew upgrade %s", homebrewUpgradeTarget),
-		fmt.Sprintf("  go install %s", goInstallTarget),
-		fmt.Sprintf("  Releases: %s", releasesPageURL),
+		fmt.Sprintf("  go install %s", goInstallTargetForVersion(latestVersion)),
+		fmt.Sprintf("  Releases: %s", ReleaseNotesURL(latestVersion)),
 	)
 	return strings.Join(lines, "\n")
 }

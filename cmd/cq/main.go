@@ -129,7 +129,7 @@ func runUpgradeCommand(stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "warning: failed to resolve latest version: %v\n", latestErr)
 	}
 
-	if err := runUpgradeFn(method, stdout, stderr); err != nil {
+	if err := runUpgradeFn(method, latestVersion, stdout, stderr); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
@@ -194,7 +194,7 @@ func runInteractive(stdout, stderr io.Writer) error {
 	}
 
 	if pendingMethod, ok := finalModel.PendingUpdate(); ok {
-		return runUpgradeFn(pendingMethod, stdout, stderr)
+		return runUpgradeFn(pendingMethod, finalModel.UpdatePromptVersion, stdout, stderr)
 	}
 
 	return nil

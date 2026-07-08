@@ -129,10 +129,10 @@ func TestRenderUpdatePromptModalExpandsInWideViewport(t *testing.T) {
 	m.Width = 160
 
 	out := ansi.Strip(m.renderUpdatePromptModal())
-	if !strings.Contains(out, "Release notes: https://github.com/deLiseLINO/codex-quota/releases/latest") {
+	if !strings.Contains(out, "Release notes: https://github.com/deLiseLINO/codex-quota/releases/tag/v0.1.4") {
 		t.Fatalf("expected full release notes line in modal:\n%s", out)
 	}
-	if !strings.Contains(out, "1. Update now (runs `go install github.com/deLiseLINO/codex-quota/cmd/cq@latest`)") {
+	if !strings.Contains(out, "1. Update now (runs `go install github.com/deLiseLINO/codex-quota/cmd/cq@v0.1.4`)") {
 		t.Fatalf("expected full update command line in modal:\n%s", out)
 	}
 	if width := maxLineWidth(out); width > updatePromptModalMaxWidth {

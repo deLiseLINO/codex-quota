@@ -108,17 +108,44 @@ func TestIsNewer(t *testing.T) {
 }
 
 func TestCommand(t *testing.T) {
-	command, args, ok := Command(MethodBrew)
+	command, args, ok := Command(MethodBrew, "0.3.3")
 	if !ok || command != "brew" || len(args) != 2 || args[1] != homebrewUpgradeTarget {
 		t.Fatalf("Command(MethodBrew) = (%q, %v, %v)", command, args, ok)
 	}
 
-	command, args, ok = Command(MethodGo)
-	if !ok || command != "go" || len(args) != 2 || args[1] != goInstallTarget {
+	command, args, ok = Command(MethodGo, "0.3.3")
+	if !ok || command != "go" || len(args) != 2 || args[1] != "github.com/deLiseLINO/codex-quota/cmd/cq@v0.3.3" {
 		t.Fatalf("Command(MethodGo) = (%q, %v, %v)", command, args, ok)
 	}
 
-	if _, _, ok := Command(MethodUnknown); ok {
+	command, args, ok = Command(MethodGo, "bad")
+	if !ok || command != "go" || len(args) != 2 || args[1] != goInstallTarget {
+		t.Fatalf("Command(MethodGo invalid version) = (%q, %v, %v)", command, args, ok)
+	}
+
+	if _, _, ok := Command(MethodUnknown, "0.3.3"); ok {
 		t.Fatalf("Command(MethodUnknown) ok = true, want false")
+	}
+}
+
+func TestCommandStringUsesExactGoVersion(t *testing.T) {
+	got := CommandString(MethodGo, "0.3.3")
+	want := "go install github.com/deLiseLINO/codex-quota/cmd/cq@v0.3.3"
+	if got != want {
+		t.Fatalf("CommandString(MethodGo) = %q, want %q", got, want)
+	}
+}
+
+func TestReleaseNotesURL(t *testing.T) {
+	got := ReleaseNotesURL("0.3.3")
+	want := "https://github.com/deLiseLINO/codex-quota/releases/tag/v0.3.3"
+	if got != want {
+		t.Fatalf("ReleaseNotesURL(valid) = %q, want %q", got, want)
+	}
+
+	got = ReleaseNotesURL("bad")
+	want = "https://github.com/deLiseLINO/codex-quota/releases/latest"
+	if got != want {
+		t.Fatalf("ReleaseNotesURL(invalid) = %q, want %q", got, want)
 	}
 }

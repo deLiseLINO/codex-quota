@@ -74,12 +74,12 @@ func (m Model) confirmUpdatePrompt() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) renderUpdatePromptModal() string {
-	command := update.CommandString(m.UpdatePromptMethod)
+	command := update.CommandString(m.UpdatePromptMethod, m.UpdatePromptVersion)
 	lines := []string{
 		UpdateHintStyle.Render("Update available"),
 		InfoValueStyle.Render(fmt.Sprintf("%s -> %s", version.Current(), m.UpdatePromptVersion)),
 		"",
-		InfoValueStyle.Render("Release notes: https://github.com/deLiseLINO/codex-quota/releases/latest"),
+		InfoValueStyle.Render("Release notes: " + update.ReleaseNotesURL(m.UpdatePromptVersion)),
 		"",
 		renderUpdatePromptOption(1, "Update now", command, m.UpdatePromptCursor == updatePromptChoiceNow),
 		renderUpdatePromptOption(2, "Skip", "", m.UpdatePromptCursor == updatePromptChoiceSkip),
