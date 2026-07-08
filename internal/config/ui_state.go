@@ -11,6 +11,7 @@ type UIState struct {
 	CompactMode          bool     `json:"compact_mode"`
 	ExhaustedAccountKeys []string `json:"exhausted_account_keys"`
 	AccountOrderKeys     []string `json:"account_order_keys"`
+	ActiveAccountKey     string   `json:"active_account_key"`
 }
 
 func LoadUIState() (UIState, error) {
@@ -61,6 +62,9 @@ func LoadUIState() (UIState, error) {
 		}
 		state.AccountOrderKeys = keys
 	}
+	if activeKey, ok := root["active_account_key"].(string); ok {
+		state.ActiveAccountKey = strings.TrimSpace(activeKey)
+	}
 
 	return state, nil
 }
@@ -75,6 +79,7 @@ func SaveUIState(state UIState) error {
 		"compact_mode":           state.CompactMode,
 		"exhausted_account_keys": state.ExhaustedAccountKeys,
 		"account_order_keys":     state.AccountOrderKeys,
+		"active_account_key":     strings.TrimSpace(state.ActiveAccountKey),
 	}
 	if err := writeJSONMap(path, root); err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)

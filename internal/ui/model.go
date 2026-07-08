@@ -142,7 +142,7 @@ func InitialModelWithStartupUpdate(
 		m.ExhaustedSticky[key] = true
 	}
 	m.pruneExhaustedSticky()
-	m.normalizeActiveAccountForView("")
+	m.normalizeActiveAccountForView(uiState.ActiveAccountKey)
 
 	if account := m.activeAccount(); account != nil {
 		m.LoadingMap[account.Key] = true
@@ -272,7 +272,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ActiveAccountIx = (m.ActiveAccountIx + 1) % len(m.Accounts)
 				}
 				m.syncActiveAccount()
-				return m, tea.Batch(m.fetchNextCmd(), m.ensureAnimationTickCmd())
+				return m, tea.Batch(m.fetchNextCmd(), m.ensureAnimationTickCmd(), SaveUIStateSnapshotCmd(m.uiStateSnapshot()))
 			}
 
 		case "left", "h", "up", "k":
@@ -283,7 +283,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ActiveAccountIx = (m.ActiveAccountIx - 1 + len(m.Accounts)) % len(m.Accounts)
 				}
 				m.syncActiveAccount()
-				return m, tea.Batch(m.fetchNextCmd(), m.ensureAnimationTickCmd())
+				return m, tea.Batch(m.fetchNextCmd(), m.ensureAnimationTickCmd(), SaveUIStateSnapshotCmd(m.uiStateSnapshot()))
 			}
 		}
 

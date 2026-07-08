@@ -114,8 +114,13 @@ func (m Model) exhaustedStickyKeys() []string {
 }
 
 func (m Model) uiStateSnapshot() config.UIState {
+	activeKey := ""
+	if account := m.activeAccount(); account != nil {
+		activeKey = account.Key
+	}
 	return config.UIState{
 		CompactMode:          m.CompactMode,
 		ExhaustedAccountKeys: m.exhaustedStickyKeys(),
+		ActiveAccountKey:     activeKey,
 	}
 }

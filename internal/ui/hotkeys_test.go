@@ -456,6 +456,27 @@ func TestInitialModelInCompactStartsFromFirstVisibleNonExhaustedAccount(t *testi
 	}
 }
 
+func TestInitialModelRestoresActiveAccountKey(t *testing.T) {
+	accounts := []*config.Account{
+		{Key: "managed:1", Label: "user1@example.com", Email: "user1@example.com", AccountID: "acc-1", Source: config.SourceManaged, Writable: true},
+		{Key: "managed:2", Label: "user2@example.com", Email: "user2@example.com", AccountID: "acc-2", Source: config.SourceManaged, Writable: true},
+	}
+
+	m := InitialModelWithUIState(
+		accounts,
+		map[string][]string{},
+		map[string][]string{},
+		config.UIState{ActiveAccountKey: "managed:2"},
+	)
+
+	if m.ActiveAccountIx != 1 {
+		t.Fatalf("ActiveAccountIx = %d, want 1", m.ActiveAccountIx)
+	}
+	if !m.LoadingMap["managed:2"] {
+		t.Fatalf("expected managed:2 to be queued for initial load, got loading map %#v", m.LoadingMap)
+	}
+}
+
 func TestAccountsMsgInCompactStartsFromFirstVisibleNonExhaustedAccount(t *testing.T) {
 	m := testModelForHotkeys(3)
 	m.CompactMode = true

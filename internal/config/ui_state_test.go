@@ -14,6 +14,7 @@ func TestUIStateRoundTrip(t *testing.T) {
 		CompactMode:          true,
 		ExhaustedAccountKeys: []string{"managed:1", "codex:2"},
 		AccountOrderKeys:     []string{"acc-2", "acc-1"},
+		ActiveAccountKey:     "managed:2",
 	}
 	if err := SaveUIState(initial); err != nil {
 		t.Fatalf("save ui state: %v", err)
@@ -41,6 +42,9 @@ func TestUIStateRoundTrip(t *testing.T) {
 		if loaded.AccountOrderKeys[i] != initial.AccountOrderKeys[i] {
 			t.Fatalf("account order key mismatch at %d: got %q, want %q", i, loaded.AccountOrderKeys[i], initial.AccountOrderKeys[i])
 		}
+	}
+	if loaded.ActiveAccountKey != initial.ActiveAccountKey {
+		t.Fatalf("active account key mismatch: got %q, want %q", loaded.ActiveAccountKey, initial.ActiveAccountKey)
 	}
 }
 

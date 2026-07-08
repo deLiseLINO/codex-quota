@@ -105,3 +105,28 @@ func TestExhaustedStickyPrunedForRemovedAccounts(t *testing.T) {
 		t.Fatalf("expected existing account to remain in exhausted sticky set")
 	}
 }
+
+func TestSaveUIStateSnapshotPersistsActiveAccountKey(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", tmp)
+
+	accounts := []*config.Account{
+		{Key: "managed:1", Label: "a@example.com", AccountID: "acc-1", Source: config.SourceManaged},
+		{Key: "managed:2", Label: "b@example.com", AccountID: "acc-2", Source: config.SourceManaged},
+	}
+	m := InitialModel(accounts, map[string][]string{}, map[string][]string{}, false)
+	m.Loading = false
+	m.ActiveAccountIx = 1
+
+	if msg := SaveUIStateSnapshotCmd(m.uiStateSnapshot())(); msg != nil {
+		t.Fatalf("expected save command to return nil, got %#v", msg)
+	}
+
+	loaded, err := config.LoadUIState()
+	if err != nil {
+		t.Fatalf("load ui state: %v", err)
+	}
+	if loaded.ActiveAccountKey != "managed:2" {
+		t.Fatalf("ActiveAccountKey = %q, want %q", loaded.ActiveAccountKey, "managed:2")
+	}
+}
