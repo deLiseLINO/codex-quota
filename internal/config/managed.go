@@ -14,10 +14,22 @@ type managedStore struct {
 	Accounts []managedAccount `json:"accounts"`
 }
 
+// managedIdentityID is the per-user identity key for an on-disk managed record,
+// mirroring identityID(*Account): workspace UUID plus user id when both are
+// present. Two users in the same workspace have distinct identity ids and must
+// not be collapsed into one stored record.
+func managedIdentityID(item managedAccount) string {
+	return identityID(&Account{
+		AccountID: strings.TrimSpace(item.AccountID),
+		UserID:    strings.TrimSpace(item.UserID),
+	})
+}
+
 type managedAccount struct {
 	Label        string `json:"label,omitempty"`
 	Email        string `json:"email,omitempty"`
 	AccountID    string `json:"account_id"`
+	UserID       string `json:"user_id,omitempty"`
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresAt    int64  `json:"expires_at_ms,omitempty"`
@@ -61,6 +73,7 @@ func LoadManagedAccounts() ([]*Account, error) {
 			Label:        strings.TrimSpace(item.Label),
 			Email:        strings.TrimSpace(item.Email),
 			AccountID:    strings.TrimSpace(item.AccountID),
+			UserID:       strings.TrimSpace(item.UserID),
 			AccessToken:  strings.TrimSpace(item.AccessToken),
 			RefreshToken: strings.TrimSpace(item.RefreshToken),
 			ClientID:     strings.TrimSpace(item.ClientID),
@@ -74,6 +87,9 @@ func LoadManagedAccounts() ([]*Account, error) {
 
 		claims := ParseAccessToken(account.AccessToken)
 		account.AccountID = CanonicalAccountID(account.AccountID, claims.AccountID)
+		if account.UserID == "" {
+			account.UserID = claims.UserID
+		}
 		if account.ClientID == "" {
 			account.ClientID = claims.ClientID
 		}
@@ -103,6 +119,9 @@ func UpsertManagedAccount(account *Account) error {
 	}
 	claims := ParseAccessToken(account.AccessToken)
 	account.AccountID = CanonicalAccountID(account.AccountID, claims.AccountID)
+	if account.UserID == "" {
+		account.UserID = claims.UserID
+	}
 	if account.Email == "" {
 		account.Email = claims.Email
 	}
@@ -138,6 +157,7 @@ func UpsertManagedAccount(account *Account) error {
 		Label:        strings.TrimSpace(account.Label),
 		Email:        strings.TrimSpace(account.Email),
 		AccountID:    strings.TrimSpace(account.AccountID),
+		UserID:       strings.TrimSpace(account.UserID),
 		AccessToken:  strings.TrimSpace(account.AccessToken),
 		RefreshToken: strings.TrimSpace(account.RefreshToken),
 		ClientID:     strings.TrimSpace(account.ClientID),
@@ -146,9 +166,10 @@ func UpsertManagedAccount(account *Account) error {
 		item.ExpiresAt = account.ExpiresAt.UnixMilli()
 	}
 
+	itemIdentity := managedIdentityID(item)
 	updated := false
 	for i := range store.Accounts {
-		if strings.TrimSpace(store.Accounts[i].AccountID) == item.AccountID {
+		if managedIdentityID(store.Accounts[i]) == itemIdentity {
 			store.Accounts[i] = mergeManagedAccount(store.Accounts[i], item)
 			updated = true
 			break
@@ -174,6 +195,9 @@ func mergeManagedAccount(existing, incoming managedAccount) managedAccount {
 	}
 	if strings.TrimSpace(merged.Email) == "" {
 		merged.Email = incoming.Email
+	}
+	if strings.TrimSpace(merged.UserID) == "" {
+		merged.UserID = incoming.UserID
 	}
 	if strings.TrimSpace(merged.ClientID) == "" {
 		merged.ClientID = incoming.ClientID
@@ -264,6 +288,7 @@ func DeleteManagedAccountByIdentity(account *Account) error {
 	if accountID == "" && email == "" {
 		return fmt.Errorf("account identity is empty")
 	}
+	targetIdentity := identityID(account)
 
 	path, err := managedAccountsPath()
 	if err != nil {
@@ -291,9 +316,25 @@ func DeleteManagedAccountByIdentity(account *Account) error {
 	for _, item := range store.Accounts {
 		itemAccountID := strings.TrimSpace(item.AccountID)
 		itemEmail := normalizeEmail(item.Email)
-		itemCanonicalID := CanonicalAccountID(itemAccountID, ParseAccessToken(strings.TrimSpace(item.AccessToken)).AccountID)
+		itemClaims := ParseAccessToken(strings.TrimSpace(item.AccessToken))
+		itemCanonicalID := CanonicalAccountID(itemAccountID, itemClaims.AccountID)
+		itemUserID := strings.TrimSpace(item.UserID)
+		if itemUserID == "" {
+			itemUserID = itemClaims.UserID
+		}
+		itemIdentity := identityID(&Account{
+			AccountID: itemCanonicalID,
+			UserID:    itemUserID,
+		})
 
-		matchID := accountID != "" && (itemAccountID == accountID || itemCanonicalID == accountID)
+		// Prefer the full per-user identity when the target carries a UserID, so
+		// deleting one user in a shared workspace does not remove the other.
+		var matchID bool
+		if targetIdentity != "" && strings.TrimSpace(account.UserID) != "" {
+			matchID = itemIdentity == targetIdentity
+		} else {
+			matchID = accountID != "" && (itemAccountID == accountID || itemCanonicalID == accountID)
+		}
 		matchEmail := email != "" && itemEmail == email
 		if matchID || matchEmail {
 			removed = true
@@ -609,6 +650,10 @@ func migrateManagedAccounts(input []managedAccount) ([]managedAccount, bool) {
 		}
 		item.AccountID = canonicalID
 
+		if item.UserID == "" && claims.UserID != "" {
+			item.UserID = claims.UserID
+			changed = true
+		}
 		if item.Email == "" && claims.Email != "" {
 			item.Email = claims.Email
 			changed = true
@@ -626,7 +671,9 @@ func migrateManagedAccounts(input []managedAccount) ([]managedAccount, bool) {
 			changed = true
 		}
 
-		key := item.AccountID
+		// Key by per-user identity, not the bare workspace UUID, so two users in
+		// the same Team/Business workspace are not merged into one record.
+		key := managedIdentityID(item)
 		if key == "" {
 			key = fmt.Sprintf("__empty__:%d", len(order))
 		}

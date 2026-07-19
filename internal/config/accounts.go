@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -18,6 +19,7 @@ type Account struct {
 	Label        string
 	Email        string
 	AccountID    string
+	UserID       string
 	AccessToken  string
 	RefreshToken string
 	ExpiresAt    time.Time
@@ -30,8 +32,38 @@ type Account struct {
 type AccessTokenClaims struct {
 	ClientID  string
 	AccountID string
+	UserID    string
 	ExpiresAt time.Time
 	Email     string
+}
+
+// identityID is the per-user identity key for an account. AccountID is the
+// ChatGPT workspace UUID, which is shared by every member of a Team/Business
+// org; UserID (from chatgpt_user_id / sub) distinguishes users within that
+// workspace. Callers that need to tell two users apart must use this, not the
+// bare AccountID. External consumers (the ChatGPT-Account-Id header and the
+// account_id written into Codex/opencode auth files) must keep using AccountID.
+func identityID(a *Account) string {
+	if a == nil {
+		return ""
+	}
+	accountID := strings.TrimSpace(a.AccountID)
+	userID := strings.TrimSpace(a.UserID)
+	if accountID != "" && userID != "" {
+		return accountID + " " + userID
+	}
+	if accountID != "" {
+		return accountID
+	}
+	return userID
+}
+
+// IdentityKey returns the per-user runtime key for an account, matching the
+// Account.Key assigned during load. Callers outside this package (the UI) use
+// it to reference the active/selected account instead of the bare AccountID,
+// which collides for co-workspace users.
+func IdentityKey(a *Account) string {
+	return identityID(a)
 }
 
 type AccountsLoadResult struct {

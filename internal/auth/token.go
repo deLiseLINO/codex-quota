@@ -124,6 +124,9 @@ func RefreshToken(account *config.Account) error {
 	if claims.AccountID != "" {
 		account.AccountID = config.CanonicalAccountID(account.AccountID, claims.AccountID)
 	}
+	if claims.UserID != "" {
+		account.UserID = claims.UserID
+	}
 
 	if tokenResp.ExpiresIn > 0 {
 		account.ExpiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
@@ -145,6 +148,7 @@ func copyResolvedAccount(target, source *config.Account) {
 	target.Label = source.Label
 	target.Email = source.Email
 	target.AccountID = source.AccountID
+	target.UserID = source.UserID
 	target.AccessToken = source.AccessToken
 	target.RefreshToken = source.RefreshToken
 	target.ExpiresAt = source.ExpiresAt

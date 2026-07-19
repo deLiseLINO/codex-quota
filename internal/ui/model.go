@@ -139,6 +139,13 @@ func InitialModelWithStartupUpdate(
 		if key == "" {
 			continue
 		}
+		// Remap legacy bare-workspace-UUID keys to the current composite Key when
+		// exactly one account matches, so exhausted state survives the key-format
+		// migration. Ambiguous or unmatched legacy keys fall through and are
+		// pruned harmlessly below.
+		if idx, ok := uniqueAccountIndexByLegacyKey(m.Accounts, key); ok {
+			key = m.Accounts[idx].Key
+		}
 		m.ExhaustedSticky[key] = true
 	}
 	m.pruneExhaustedSticky()
@@ -408,8 +415,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if prevSnapshot != nil && msg.Account != nil {
 			prevEmail := strings.TrimSpace(prevSnapshot.Email)
 			nextEmail := strings.TrimSpace(msg.Account.Email)
-			prevID := strings.TrimSpace(prevSnapshot.AccountID)
-			nextID := strings.TrimSpace(msg.Account.AccountID)
+			prevID := config.IdentityKey(prevSnapshot)
+			nextID := config.IdentityKey(msg.Account)
 			if (prevEmail == "" && nextEmail != "") || (prevID != "" && nextID != "" && prevID != nextID) {
 				return m, tea.Batch(ReloadAccountsCmd(msg.AccountKey), nextCmd)
 			}
