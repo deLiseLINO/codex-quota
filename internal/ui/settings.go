@@ -209,9 +209,7 @@ func (m Model) renderSettingsIntervalRow(row int, label string, value int) strin
 	if m.settingsCursor == row {
 		cursor = ">"
 	}
-	valueLine := fmt.Sprintf("%s %-28s %d", cursor, label, value)
-	labelLine := fmt.Sprintf("%31s%s", "", formatIntervalLabel(value))
-	return InfoValueStyle.Render(valueLine + "\n" + labelLine)
+	return InfoValueStyle.Render(fmt.Sprintf("%s %-28s %d (%s)", cursor, label, value, formatIntervalLabel(value)))
 }
 
 func formatIntervalLabel(seconds int) string {
