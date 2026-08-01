@@ -53,6 +53,7 @@ type Model struct {
 	ExhaustedSticky         map[string]bool
 	lastRefresh             map[string]time.Time
 	refreshScheduled        map[string]bool
+	silentRefresh           map[string]bool
 	Accounts                []*config.Account
 	SourcesByAccountID      map[string][]string
 	ActiveSourcesByIdentity map[string][]string
@@ -148,6 +149,7 @@ func InitialModelWithSettingsAndStartupUpdate(
 		ExhaustedSticky:         make(map[string]bool),
 		lastRefresh:             make(map[string]time.Time),
 		refreshScheduled:        make(map[string]bool),
+		silentRefresh:           make(map[string]bool),
 		compactBarAnimations:    make(map[string]compactBarAnimation),
 		tabWindowAnimations:     make(map[string]tabWindowAnimation),
 		UpdatePromptCursor:      0,
@@ -414,18 +416,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.AccountKey != "" {
 			prevData, hadPrevData = m.UsageData[msg.AccountKey]
 			wasLoading = m.LoadingMap[msg.AccountKey]
+			silent := m.silentRefresh[msg.AccountKey]
+			delete(m.silentRefresh, msg.AccountKey)
 			m.UsageData[msg.AccountKey] = msg.Data
 			planChanged := m.setKnownPlanType(msg.AccountKey, msg.Data.PlanType)
 			stateChanged = m.setExhaustedStickyIfConfirmed(msg.AccountKey, msg.Data) || stateChanged || planChanged
 			m.LoadingMap[msg.AccountKey] = false
 			delete(m.ErrorsMap, msg.AccountKey)
-			if m.CompactMode {
-				m.startCompactBarAnimation(msg.AccountKey, prevData, hadPrevData, msg.Data, wasLoading)
-			} else {
-				delete(m.compactBarAnimations, msg.AccountKey)
-			}
-			if msg.AccountKey == m.activeAccountKey() {
-				m.startTabWindowAnimations(msg.AccountKey, prevData, hadPrevData, msg.Data, wasLoading, tabLoadAnimationDuration)
+			if !silent {
+				if m.CompactMode {
+					m.startCompactBarAnimation(msg.AccountKey, prevData, hadPrevData, msg.Data, wasLoading)
+				} else {
+					delete(m.compactBarAnimations, msg.AccountKey)
+				}
+				if msg.AccountKey == m.activeAccountKey() {
+					m.startTabWindowAnimations(msg.AccountKey, prevData, hadPrevData, msg.Data, wasLoading, tabLoadAnimationDuration)
+				}
 			}
 		}
 		cmds := []tea.Cmd{m.fetchNextCmd(), m.ensureAnimationTickCmd()}
@@ -529,6 +535,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.AccountKey != "" {
 			m.ErrorsMap[msg.AccountKey] = msg.Err
 			m.LoadingMap[msg.AccountKey] = false
+			delete(m.silentRefresh, msg.AccountKey)
 			delete(m.compactBarAnimations, msg.AccountKey)
 			if msg.AccountKey == m.activeAccountKey() {
 				m.clearTabWindowAnimations()

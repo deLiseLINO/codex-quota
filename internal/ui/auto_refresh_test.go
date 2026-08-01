@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/deLiseLINO/codex-quota/internal/api"
 	"github.com/deLiseLINO/codex-quota/internal/config"
@@ -328,6 +330,97 @@ func TestChangingBackgroundIntervalResetsBackgroundTimersOnly(t *testing.T) {
 	got5 := updated4.(Model)
 	if got5.LoadingMap["managed:2"] {
 		t.Fatalf("background refresh fired at old interval after background interval change")
+	}
+}
+
+func TestAutoRefreshShowsDataNotLoadingInCompactView(t *testing.T) {
+	account := &config.Account{Key: "acc-1", Label: "user@example.com", Email: "user@example.com", AccountID: "acc-1", Source: config.SourceManaged}
+	m := InitialModel([]*config.Account{account}, map[string][]string{}, map[string][]string{}, true)
+	m.Settings.AutoRefreshEnabled = true
+	m.Settings.ActiveIntervalSec = 30
+	m.Width = 150
+	m.UsageData = map[string]api.UsageData{
+		"acc-1": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 40, ResetAt: time.Now().Add(2 * time.Hour)}}},
+	}
+	m.LoadingMap = map[string]bool{}
+	m.ErrorsMap = map[string]error{}
+	m.lastRefresh = map[string]time.Time{}
+	m.ActiveAccountIx = 0
+
+	updated, _ := m.Update(AutoRefreshTickMsg{Now: t0})
+	got := updated.(Model)
+	updated2, _ := got.Update(AutoRefreshTickMsg{Now: t0.Add(30 * time.Second)})
+	got2 := updated2.(Model)
+
+	if !got2.LoadingMap["acc-1"] || !got2.silentRefresh["acc-1"] {
+		t.Fatalf("expected in-flight silent auto-refresh")
+	}
+
+	out := ansi.Strip(got2.renderCompactView())
+	if strings.Contains(out, "Loading...") {
+		t.Fatalf("did not expect Loading... during auto-refresh:\n%s", out)
+	}
+	if !strings.Contains(out, "40%") {
+		t.Fatalf("expected data still visible during auto-refresh:\n%s", out)
+	}
+}
+
+func TestAutoRefreshDataMsgSkipsAnimations(t *testing.T) {
+	account := &config.Account{Key: "acc-1", Label: "user@example.com", AccountID: "acc-1", Source: config.SourceManaged}
+	m := InitialModel([]*config.Account{account}, map[string][]string{}, map[string][]string{}, true)
+	m.Settings.AutoRefreshEnabled = true
+	m.Settings.ActiveIntervalSec = 30
+	m.UsageData = map[string]api.UsageData{
+		"acc-1": {Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 40}}},
+	}
+	m.LoadingMap = map[string]bool{}
+	m.lastRefresh = map[string]time.Time{}
+	m.ActiveAccountIx = 0
+
+	updated, _ := m.Update(AutoRefreshTickMsg{Now: t0})
+	got := updated.(Model)
+	updated2, _ := got.Update(AutoRefreshTickMsg{Now: t0.Add(30 * time.Second)})
+	got2 := updated2.(Model)
+	if !got2.silentRefresh["acc-1"] {
+		t.Fatalf("expected auto-refresh marked silent")
+	}
+
+	updated3, _ := got2.Update(DataMsg{
+		AccountKey: "acc-1",
+		Data: api.UsageData{
+			Windows: []api.QuotaWindow{{Label: "Weekly usage limit", WindowSec: 604800, LeftPercent: 60}},
+		},
+	})
+	got3 := updated3.(Model)
+
+	if got3.silentRefresh["acc-1"] {
+		t.Fatalf("expected silentRefresh cleared after data arrives")
+	}
+	if len(got3.compactBarAnimations) != 0 {
+		t.Fatalf("did not expect compact bar animation on auto-refresh")
+	}
+	if len(got3.tabWindowAnimations) != 0 {
+		t.Fatalf("did not expect tab window animation on auto-refresh")
+	}
+	if got3.UsageData["acc-1"].Windows[0].LeftPercent != 60 {
+		t.Fatalf("expected updated data stored")
+	}
+}
+
+func TestManualRefreshIsNotSilent(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.Settings.AutoRefreshEnabled = true
+	m = markLoaded(m, "managed:1")
+	m.lastRefresh = map[string]time.Time{}
+	m.ActiveAccountIx = 0
+
+	refreshed, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	got := refreshed.(Model)
+	if !got.LoadingMap["managed:1"] {
+		t.Fatalf("expected account loading after manual refresh")
+	}
+	if got.silentRefresh["managed:1"] {
+		t.Fatalf("did not expect manual refresh marked silent")
 	}
 }
 

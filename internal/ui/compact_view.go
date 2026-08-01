@@ -119,7 +119,7 @@ func (m Model) renderCompactAccountRow(index int, acc *config.Account, accountWi
 		s.WriteString(m.renderCompactStatusRow(status, subscribed, barWidth, percentWidth, resetWidth))
 		return s.String()
 	}
-	if m.LoadingMap[acc.Key] {
+	if m.LoadingMap[acc.Key] && !m.silentRefresh[acc.Key] {
 		s.WriteString(m.renderCompactStatusRow("Loading...", subscribed, barWidth, percentWidth, resetWidth))
 		return s.String()
 	}
@@ -154,7 +154,7 @@ func (m Model) isCompactAccountExhausted(accountKey string) bool {
 	if m.ExhaustedSticky[accountKey] {
 		return true
 	}
-	if m.LoadingMap[accountKey] {
+	if m.LoadingMap[accountKey] && !m.silentRefresh[accountKey] {
 		return false
 	}
 	if err := m.ErrorsMap[accountKey]; err != nil {

@@ -73,7 +73,7 @@ func (m *Model) resetAutoRefreshTimer(accountKey string) {
 }
 
 func (m *Model) pruneAutoRefreshTimers() {
-	if len(m.lastRefresh) == 0 {
+	if len(m.lastRefresh) == 0 && len(m.silentRefresh) == 0 {
 		return
 	}
 	valid := make(map[string]struct{}, len(m.Accounts))
@@ -85,6 +85,11 @@ func (m *Model) pruneAutoRefreshTimers() {
 	for key := range m.lastRefresh {
 		if _, ok := valid[key]; !ok {
 			delete(m.lastRefresh, key)
+		}
+	}
+	for key := range m.silentRefresh {
+		if _, ok := valid[key]; !ok {
+			delete(m.silentRefresh, key)
 		}
 	}
 }

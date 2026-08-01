@@ -452,6 +452,7 @@ func (m *Model) fetchNextCmd() tea.Cmd {
 		if scheduled {
 			delete(m.refreshScheduled, acc.Key)
 			m.LoadingMap[acc.Key] = true
+			m.silentRefresh[acc.Key] = true
 			return FetchDataCmd(acc)
 		}
 		if !hasData && !hasErr {
