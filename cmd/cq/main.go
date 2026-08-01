@@ -170,11 +170,12 @@ func runInteractive(stdout, stderr io.Writer) error {
 	}
 
 	program := tea.NewProgram(
-		ui.InitialModelWithStartupUpdate(
+		ui.InitialModelWithSettingsAndStartupUpdate(
 			loadResult.Accounts,
 			loadResult.SourcesByAccountID,
 			loadResult.ActiveSourcesByIdentity,
 			uiState,
+			settings,
 			startupUpdate,
 		),
 		tea.WithAltScreen(),

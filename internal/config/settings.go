@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	activeIntervalMinSec     = 15
-	activeIntervalMaxSec     = 600
-	backgroundIntervalMinSec = 60
-	backgroundIntervalMaxSec = 3600
+	ActiveIntervalMinSec     = 15
+	ActiveIntervalMaxSec     = 600
+	BackgroundIntervalMinSec = 60
+	BackgroundIntervalMaxSec = 3600
 )
 
 type Settings struct {
@@ -51,10 +51,10 @@ func LoadSettings() (Settings, error) {
 		settings.AutoRefreshEnabled = enabled
 	}
 	if raw, ok := asInt64(root["active_interval_sec"]); ok {
-		settings.ActiveIntervalSec = clampInt(int(raw), activeIntervalMinSec, activeIntervalMaxSec)
+		settings.ActiveIntervalSec = ClampInt(int(raw), ActiveIntervalMinSec, ActiveIntervalMaxSec)
 	}
 	if raw, ok := asInt64(root["background_interval_sec"]); ok {
-		settings.BackgroundIntervalSec = clampInt(int(raw), backgroundIntervalMinSec, backgroundIntervalMaxSec)
+		settings.BackgroundIntervalSec = ClampInt(int(raw), BackgroundIntervalMinSec, BackgroundIntervalMaxSec)
 	}
 
 	return settings, nil
@@ -87,7 +87,7 @@ func settingsPath() (string, error) {
 	return filepath.Join(dir, "settings.json"), nil
 }
 
-func clampInt(value, min, max int) int {
+func ClampInt(value, min, max int) int {
 	if value < min {
 		return min
 	}

@@ -82,10 +82,10 @@ func TestLoadSettingsClampsIntervals(t *testing.T) {
 		wantActive     int
 		wantBackground int
 	}{
-		{"clamp active low", `{"active_interval_sec":5}`, activeIntervalMinSec, defaults.BackgroundIntervalSec},
-		{"clamp active high", `{"active_interval_sec":1000}`, activeIntervalMaxSec, defaults.BackgroundIntervalSec},
-		{"clamp background low", `{"background_interval_sec":10}`, defaults.ActiveIntervalSec, backgroundIntervalMinSec},
-		{"clamp background high", `{"background_interval_sec":9999}`, defaults.ActiveIntervalSec, backgroundIntervalMaxSec},
+		{"clamp active low", `{"active_interval_sec":5}`, ActiveIntervalMinSec, defaults.BackgroundIntervalSec},
+		{"clamp active high", `{"active_interval_sec":1000}`, ActiveIntervalMaxSec, defaults.BackgroundIntervalSec},
+		{"clamp background low", `{"background_interval_sec":10}`, defaults.ActiveIntervalSec, BackgroundIntervalMinSec},
+		{"clamp background high", `{"background_interval_sec":9999}`, defaults.ActiveIntervalSec, BackgroundIntervalMaxSec},
 		{"in bounds unchanged", `{"active_interval_sec":60,"background_interval_sec":120}`, 60, 120},
 	}
 

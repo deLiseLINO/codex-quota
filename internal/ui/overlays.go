@@ -14,6 +14,10 @@ func (m Model) currentOverlayModal() string {
 		return m.renderUpdatePromptModal()
 	}
 
+	if m.SettingsVisible {
+		return m.renderSettingsModal()
+	}
+
 	if m.HelpVisible {
 		return m.renderHelpModal()
 	}
@@ -246,6 +250,7 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine(primaryMove, "Move between accounts"),
 		renderHelpLine("v / c", "Toggle view mode"),
 		renderHelpLine("u", "Check for updates"),
+		renderHelpLine("s", "Settings"),
 		renderHelpLine("?", "Open or close this help"),
 		renderHelpLine("q", "Quit"),
 		"",

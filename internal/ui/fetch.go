@@ -347,6 +347,13 @@ func SaveUIStateSnapshotCmd(state config.UIState) tea.Cmd {
 	}
 }
 
+func SaveSettingsCmd(settings config.Settings) tea.Cmd {
+	return func() tea.Msg {
+		_ = config.SaveSettings(settings)
+		return nil
+	}
+}
+
 func DismissUpdateVersionCmd(version string) tea.Cmd {
 	return func() tea.Msg {
 		_ = config.SetDismissedUpdateVersion(version)

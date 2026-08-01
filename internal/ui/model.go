@@ -29,6 +29,11 @@ type Model struct {
 	HelpVisible             bool
 	ActionMenuVisible       bool
 	ActionMenuCursor        int
+	SettingsVisible         bool
+	Settings                config.Settings
+	settingsCursor          int
+	settingsDraft           int
+	settingsDraftActive     bool
 	AddAccountLoginVisible  bool
 	AddAccountLoginURL      string
 	AddAccountBrowserFailed bool
@@ -97,6 +102,24 @@ func InitialModelWithStartupUpdate(
 	uiState config.UIState,
 	startupUpdate *StartupUpdatePrompt,
 ) Model {
+	return InitialModelWithSettingsAndStartupUpdate(
+		accounts,
+		sourcesByAccountID,
+		activeSourcesByIdentity,
+		uiState,
+		config.DefaultSettings(),
+		startupUpdate,
+	)
+}
+
+func InitialModelWithSettingsAndStartupUpdate(
+	accounts []*config.Account,
+	sourcesByAccountID map[string][]string,
+	activeSourcesByIdentity map[string][]string,
+	uiState config.UIState,
+	settings config.Settings,
+	startupUpdate *StartupUpdatePrompt,
+) Model {
 	defaultProgress := progress.New(
 		progress.WithDefaultGradient(),
 		progress.WithoutPercentage(),
@@ -123,6 +146,7 @@ func InitialModelWithStartupUpdate(
 		compactBarAnimations:    make(map[string]compactBarAnimation),
 		tabWindowAnimations:     make(map[string]tabWindowAnimation),
 		UpdatePromptCursor:      0,
+		Settings:                settings,
 	}
 	m.Accounts = accounts
 	if startupUpdate != nil {
@@ -179,6 +203,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.UpdatePromptVisible {
 			return m.handleUpdatePrompt(msg, keyStr)
 		}
+		if m.SettingsVisible {
+			return m.handleSettingsOverlay(keyStr)
+		}
 		if m.HelpVisible {
 			return m.handleHelpOverlay(keyStr)
 		}
@@ -210,6 +237,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "help":
 			m.openHelpOverlay()
+			return m, nil
+
+		case "s":
+			m.openSettingsOverlay()
 			return m, nil
 
 		case "enter":
