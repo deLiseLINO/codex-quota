@@ -159,6 +159,7 @@ func (m Model) beginRefreshActive() (tea.Model, tea.Cmd) {
 	delete(m.ErrorsMap, m.activeAccountKey())
 	delete(m.compactBarAnimations, m.activeAccountKey())
 	m.clearTabWindowAnimations()
+	m.resetAutoRefreshTimer(m.activeAccountKey())
 	return m, m.fetchNextCmd()
 }
 
@@ -177,6 +178,7 @@ func (m Model) beginRefreshAll() (tea.Model, tea.Cmd) {
 	m.compactBarAnimations = make(map[string]compactBarAnimation)
 	m.tabWindowAnimations = make(map[string]tabWindowAnimation)
 	m.animationTicking = false
+	m.resetAutoRefreshTimers()
 
 	return m, m.fetchNextCmd()
 }

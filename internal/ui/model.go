@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
@@ -50,6 +51,8 @@ type Model struct {
 	LoadingMap              map[string]bool
 	ErrorsMap               map[string]error
 	ExhaustedSticky         map[string]bool
+	lastRefresh             map[string]time.Time
+	refreshScheduled        map[string]bool
 	Accounts                []*config.Account
 	SourcesByAccountID      map[string][]string
 	ActiveSourcesByIdentity map[string][]string
@@ -143,6 +146,8 @@ func InitialModelWithSettingsAndStartupUpdate(
 		LoadingMap:              make(map[string]bool),
 		ErrorsMap:               make(map[string]error),
 		ExhaustedSticky:         make(map[string]bool),
+		lastRefresh:             make(map[string]time.Time),
+		refreshScheduled:        make(map[string]bool),
 		compactBarAnimations:    make(map[string]compactBarAnimation),
 		tabWindowAnimations:     make(map[string]tabWindowAnimation),
 		UpdatePromptCursor:      0,
@@ -181,10 +186,11 @@ func InitialModelWithSettingsAndStartupUpdate(
 
 func (m Model) Init() tea.Cmd {
 	titleCmd := tea.SetWindowTitle("🚀 Codex Quota")
+	cmds := []tea.Cmd{titleCmd, autoRefreshTickCmd()}
 	if account := m.activeAccount(); account != nil {
-		return tea.Batch(titleCmd, FetchDataCmd(account), m.fetchNextCmd())
+		cmds = append(cmds, FetchDataCmd(account), m.fetchNextCmd())
 	}
-	return titleCmd
+	return tea.Batch(cmds...)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -344,6 +350,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Data = api.UsageData{}
 		m.pruneCompactBarAnimations()
 		m.pruneKnownPlanTypes()
+		m.pruneAutoRefreshTimers()
 		stickyPruned := m.pruneExhaustedSticky()
 		m.clearTabWindowAnimations()
 		m.resetDeleteState()
@@ -573,6 +580,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, animationTickCmd()
+
+	case AutoRefreshTickMsg:
+		return m.handleAutoRefreshTick(msg.Now)
 	}
 
 	return m, nil

@@ -60,6 +60,9 @@ func (m Model) handleSettingsOverlay(keyStr string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.flipSettingsToggle()
+		if m.Settings.AutoRefreshEnabled {
+			m.resetAutoRefreshTimers()
+		}
 		return m, SaveSettingsCmd(m.Settings)
 	case "left", "h", "right", "l":
 		if !m.settingsRowIsInterval() {
@@ -70,12 +73,14 @@ func (m Model) handleSettingsOverlay(keyStr string) (tea.Model, tea.Cmd) {
 			step = -step
 		}
 		m.stepSettingsInterval(step)
+		m.resetSettingsIntervalTimers()
 		return m, SaveSettingsCmd(m.Settings)
 	}
 
 	if len(keyStr) == 1 && keyStr[0] >= '0' && keyStr[0] <= '9' {
 		if m.settingsRowIsInterval() {
 			m.typeSettingsDigit(int(keyStr[0] - '0'))
+			m.resetSettingsIntervalTimers()
 			return m, SaveSettingsCmd(m.Settings)
 		}
 	}
@@ -103,6 +108,21 @@ func (m *Model) flipSettingsToggle() {
 		m.Settings.AutoRefreshEnabled = !m.Settings.AutoRefreshEnabled
 	case settingsRowUpdateCheck:
 		m.Settings.CheckForUpdateOnStartup = !m.Settings.CheckForUpdateOnStartup
+	}
+}
+
+func (m *Model) resetSettingsIntervalTimers() {
+	if m.settingsCursor != settingsRowBackgroundInterval {
+		m.resetAutoRefreshTimer(m.activeAccountKey())
+		return
+	}
+	for _, acc := range m.Accounts {
+		if acc == nil || acc.Key == "" {
+			continue
+		}
+		if acc.Key != m.activeAccountKey() {
+			m.resetAutoRefreshTimer(acc.Key)
+		}
 	}
 }
 

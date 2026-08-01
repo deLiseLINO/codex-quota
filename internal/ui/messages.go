@@ -62,3 +62,7 @@ type UpdateAvailableMsg struct {
 type AnimationFrameMsg struct {
 	Now time.Time
 }
+
+type AutoRefreshTickMsg struct {
+	Now time.Time
+}

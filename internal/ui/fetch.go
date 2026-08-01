@@ -448,6 +448,12 @@ func (m *Model) fetchNextCmd() tea.Cmd {
 		_, hasData := m.UsageData[acc.Key]
 		_, hasErr := m.ErrorsMap[acc.Key]
 
+		scheduled := m.refreshScheduled[acc.Key]
+		if scheduled {
+			delete(m.refreshScheduled, acc.Key)
+			m.LoadingMap[acc.Key] = true
+			return FetchDataCmd(acc)
+		}
 		if !hasData && !hasErr {
 			m.LoadingMap[acc.Key] = true
 			return FetchDataCmd(acc)
