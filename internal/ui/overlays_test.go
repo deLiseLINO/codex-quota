@@ -67,8 +67,14 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	if !strings.Contains(out, "Keyboard help") {
 		t.Fatalf("expected help title in modal:\n%s", out)
 	}
-	if !strings.Contains(out, "Primary") {
-		t.Fatalf("expected primary section in help modal:\n%s", out)
+	if !strings.Contains(out, "Account Actions") {
+		t.Fatalf("expected Account Actions section in help modal:\n%s", out)
+	}
+	if !strings.Contains(out, "Other") {
+		t.Fatalf("expected Other section in help modal:\n%s", out)
+	}
+	if strings.Contains(out, "Primary") {
+		t.Fatalf("did not expect old Primary section in help modal:\n%s", out)
 	}
 	if strings.Contains(out, "Actions menu") || strings.Contains(out, "Aliases") || strings.Contains(out, "Modal controls") {
 		t.Fatalf("did not expect removed sections in help modal:\n%s", out)
@@ -80,7 +86,13 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 		t.Fatalf("expected refresh all guidance in help modal:\n%s", out)
 	}
 	if !strings.Contains(out, "o          Apply to Codex/OpenCode") {
-		t.Fatalf("expected apply action in primary help:\n%s", out)
+		t.Fatalf("expected apply action in help modal:\n%s", out)
+	}
+	if !strings.Contains(out, "v / c      Toggle view mode") {
+		t.Fatalf("expected view mode alias guidance in help modal:\n%s", out)
+	}
+	if strings.Contains(out, "esc") {
+		t.Fatalf("did not expect esc in help modal:\n%s", out)
 	}
 	if strings.Contains(out, "Use the actions menu for secondary tasks") {
 		t.Fatalf("did not expect explanatory note in help modal:\n%s", out)
