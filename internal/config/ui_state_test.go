@@ -85,6 +85,60 @@ func TestLoadUIStateInvalidJSONReturnsError(t *testing.T) {
 	}
 }
 
+func TestUIStatePlanTypesRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", tmp)
+
+	initial := UIState{
+		PlanTypes: map[string]string{
+			"acc-1": "pro",
+			"acc-2": "free",
+		},
+	}
+	if err := SaveUIState(initial); err != nil {
+		t.Fatalf("save ui state: %v", err)
+	}
+
+	loaded, err := LoadUIState()
+	if err != nil {
+		t.Fatalf("load ui state: %v", err)
+	}
+	if len(loaded.PlanTypes) != len(initial.PlanTypes) {
+		t.Fatalf("plan types length mismatch: got %d, want %d", len(loaded.PlanTypes), len(initial.PlanTypes))
+	}
+	for key, want := range initial.PlanTypes {
+		got, ok := loaded.PlanTypes[key]
+		if !ok {
+			t.Fatalf("plan type missing for %q", key)
+		}
+		if got != want {
+			t.Fatalf("plan type mismatch for %q: got %q, want %q", key, got, want)
+		}
+	}
+}
+
+func TestLoadUIStateOldFormatWithoutPlanTypes(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", tmp)
+
+	dir := filepath.Join(tmp, "codex-quota")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "ui_state.json")
+	if err := os.WriteFile(path, []byte(`{"compact_mode":true}`), 0o600); err != nil {
+		t.Fatalf("write ui state: %v", err)
+	}
+
+	loaded, err := LoadUIState()
+	if err != nil {
+		t.Fatalf("load ui state: %v", err)
+	}
+	if len(loaded.PlanTypes) != 0 {
+		t.Fatalf("expected empty plan types for old format, got %d", len(loaded.PlanTypes))
+	}
+}
+
 func TestLoadUIStateOldFormatWithoutExhaustedKeys(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("CQ_CONFIG_HOME", tmp)

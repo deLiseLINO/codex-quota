@@ -8,10 +8,11 @@ import (
 )
 
 type UIState struct {
-	CompactMode          bool     `json:"compact_mode"`
-	ExhaustedAccountKeys []string `json:"exhausted_account_keys"`
-	AccountOrderKeys     []string `json:"account_order_keys"`
-	ActiveAccountKey     string   `json:"active_account_key"`
+	CompactMode          bool              `json:"compact_mode"`
+	ExhaustedAccountKeys []string          `json:"exhausted_account_keys"`
+	AccountOrderKeys     []string          `json:"account_order_keys"`
+	ActiveAccountKey     string            `json:"active_account_key"`
+	PlanTypes            map[string]string `json:"plan_types,omitempty"`
 }
 
 func LoadUIState() (UIState, error) {
@@ -65,6 +66,22 @@ func LoadUIState() (UIState, error) {
 	if activeKey, ok := root["active_account_key"].(string); ok {
 		state.ActiveAccountKey = strings.TrimSpace(activeKey)
 	}
+	if planTypesAny, ok := root["plan_types"].(map[string]any); ok {
+		planTypes := make(map[string]string, len(planTypesAny))
+		for key, raw := range planTypesAny {
+			value, ok := raw.(string)
+			if !ok {
+				continue
+			}
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+			if key == "" || value == "" {
+				continue
+			}
+			planTypes[key] = value
+		}
+		state.PlanTypes = planTypes
+	}
 
 	return state, nil
 }
@@ -80,6 +97,9 @@ func SaveUIState(state UIState) error {
 		"exhausted_account_keys": state.ExhaustedAccountKeys,
 		"account_order_keys":     state.AccountOrderKeys,
 		"active_account_key":     strings.TrimSpace(state.ActiveAccountKey),
+	}
+	if len(state.PlanTypes) > 0 {
+		root["plan_types"] = state.PlanTypes
 	}
 	if err := writeJSONMap(path, root); err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)

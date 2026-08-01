@@ -142,6 +142,10 @@ func InitialModelWithStartupUpdate(
 		m.ExhaustedSticky[key] = true
 	}
 	m.pruneExhaustedSticky()
+	for key, planType := range uiState.PlanTypes {
+		m.setKnownPlanType(key, planType)
+	}
+	m.pruneKnownPlanTypes()
 	m.normalizeActiveAccountForView(uiState.ActiveAccountKey)
 
 	if account := m.activeAccount(); account != nil {
@@ -368,13 +372,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			hadPrevData bool
 			wasLoading  bool
 		)
-		stickyChanged := false
+		stateChanged := false
 		if msg.AccountKey != "" {
 			prevData, hadPrevData = m.UsageData[msg.AccountKey]
 			wasLoading = m.LoadingMap[msg.AccountKey]
 			m.UsageData[msg.AccountKey] = msg.Data
-			m.setKnownPlanType(msg.AccountKey, msg.Data.PlanType)
-			stickyChanged = m.setExhaustedStickyIfConfirmed(msg.AccountKey, msg.Data) || stickyChanged
+			planChanged := m.setKnownPlanType(msg.AccountKey, msg.Data.PlanType)
+			stateChanged = m.setExhaustedStickyIfConfirmed(msg.AccountKey, msg.Data) || stateChanged || planChanged
 			m.LoadingMap[msg.AccountKey] = false
 			delete(m.ErrorsMap, msg.AccountKey)
 			if m.CompactMode {
@@ -387,7 +391,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		cmds := []tea.Cmd{m.fetchNextCmd(), m.ensureAnimationTickCmd()}
-		if stickyChanged {
+		if stateChanged {
 			cmds = append(cmds, SaveUIStateSnapshotCmd(m.uiStateSnapshot()))
 		}
 		nextCmd := tea.Batch(cmds...)

@@ -8,18 +8,22 @@ import (
 	"github.com/deLiseLINO/codex-quota/internal/config"
 )
 
-func (m *Model) setKnownPlanType(accountKey string, planType string) {
+func (m *Model) setKnownPlanType(accountKey string, planType string) bool {
 	if accountKey == "" {
-		return
+		return false
 	}
 	normalized := strings.ToLower(strings.TrimSpace(planType))
 	if normalized == "" {
-		return
+		return false
 	}
 	if m.PlanTypeByAccount == nil {
 		m.PlanTypeByAccount = make(map[string]string)
 	}
+	if existing := m.PlanTypeByAccount[accountKey]; existing == normalized {
+		return false
+	}
 	m.PlanTypeByAccount[accountKey] = normalized
+	return true
 }
 
 func (m Model) isPaidByKnownPlan(accountKey string) bool {
@@ -33,22 +37,34 @@ func (m Model) isPaidByKnownPlan(accountKey string) bool {
 	return planType != "free"
 }
 
-func (m *Model) pruneKnownPlanTypes() {
-	if len(m.PlanTypeByAccount) == 0 {
-		return
+func pruneKeysForMissingAccounts[V any](mp map[string]V, accounts []*config.Account) bool {
+	if len(mp) == 0 {
+		return false
 	}
-	valid := make(map[string]struct{}, len(m.Accounts))
-	for _, acc := range m.Accounts {
+	valid := make(map[string]struct{}, len(accounts))
+	for _, acc := range accounts {
 		if acc == nil || acc.Key == "" {
 			continue
 		}
 		valid[acc.Key] = struct{}{}
 	}
-	for key := range m.PlanTypeByAccount {
-		if _, ok := valid[key]; !ok {
-			delete(m.PlanTypeByAccount, key)
+	changed := false
+	for key := range mp {
+		if _, ok := valid[key]; ok {
+			continue
 		}
+		delete(mp, key)
+		changed = true
 	}
+	return changed
+}
+
+func (m *Model) pruneKnownPlanTypes() {
+	pruneKeysForMissingAccounts(m.PlanTypeByAccount, m.Accounts)
+}
+
+func (m *Model) pruneExhaustedSticky() bool {
+	return pruneKeysForMissingAccounts(m.ExhaustedSticky, m.Accounts)
 }
 
 func (m *Model) setExhaustedStickyIfConfirmed(accountKey string, data api.UsageData) bool {
@@ -75,29 +91,6 @@ func (m *Model) setExhaustedStickyIfConfirmed(accountKey string, data api.UsageD
 	return false
 }
 
-func (m *Model) pruneExhaustedSticky() bool {
-	if len(m.ExhaustedSticky) == 0 {
-		return false
-	}
-	valid := make(map[string]struct{}, len(m.Accounts))
-	for _, acc := range m.Accounts {
-		if acc == nil || acc.Key == "" {
-			continue
-		}
-		valid[acc.Key] = struct{}{}
-	}
-
-	changed := false
-	for key := range m.ExhaustedSticky {
-		if _, ok := valid[key]; ok {
-			continue
-		}
-		delete(m.ExhaustedSticky, key)
-		changed = true
-	}
-	return changed
-}
-
 func (m Model) exhaustedStickyKeys() []string {
 	if len(m.ExhaustedSticky) == 0 {
 		return nil
@@ -118,9 +111,14 @@ func (m Model) uiStateSnapshot() config.UIState {
 	if account := m.activeAccount(); account != nil {
 		activeKey = account.Key
 	}
+	planTypes := make(map[string]string, len(m.PlanTypeByAccount))
+	for key, planType := range m.PlanTypeByAccount {
+		planTypes[key] = planType
+	}
 	return config.UIState{
 		CompactMode:          m.CompactMode,
 		ExhaustedAccountKeys: m.exhaustedStickyKeys(),
 		ActiveAccountKey:     activeKey,
+		PlanTypes:            planTypes,
 	}
 }
