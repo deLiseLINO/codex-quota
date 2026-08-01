@@ -93,6 +93,12 @@ func TestShouldPrompt(t *testing.T) {
 	if latest, ok := ShouldPrompt(settings, state, "0.1.4", MethodUnknown); ok || latest != "" {
 		t.Fatalf("ShouldPrompt() for unknown method = (%q, %v), want empty/false", latest, ok)
 	}
+
+	disabled := config.Settings{CheckForUpdateOnStartup: false}
+	state.DismissedVersion = ""
+	if latest, ok := ShouldPrompt(disabled, state, "0.1.4", MethodGo); ok || latest != "" {
+		t.Fatalf("ShouldPrompt() with check disabled = (%q, %v), want empty/false", latest, ok)
+	}
 }
 
 func TestIsNewer(t *testing.T) {

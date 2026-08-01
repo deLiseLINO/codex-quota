@@ -237,30 +237,60 @@ func TestSettingsChangeAutoSaves(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CQ_CONFIG_HOME", dir)
 
-	m := testModelForHotkeys(1)
-	m.Settings = config.Settings{
-		AutoRefreshEnabled:      true,
-		ActiveIntervalSec:       30,
-		BackgroundIntervalSec:   300,
-		CheckForUpdateOnStartup: true,
+	cases := []struct {
+		name       string
+		row        int
+		fieldGot   func(config.Settings) bool
+		fieldSaved func(config.Settings) bool
+	}{
+		{
+			name:       "auto-refresh",
+			row:        settingsRowAutoRefresh,
+			fieldGot:   func(s config.Settings) bool { return s.AutoRefreshEnabled },
+			fieldSaved: func(s config.Settings) bool { return s.AutoRefreshEnabled },
+		},
+		{
+			name:       "update-check",
+			row:        settingsRowUpdateCheck,
+			fieldGot:   func(s config.Settings) bool { return s.CheckForUpdateOnStartup },
+			fieldSaved: func(s config.Settings) bool { return s.CheckForUpdateOnStartup },
+		},
 	}
-	m.openSettingsOverlay()
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
-	if updated.(Model).Settings.AutoRefreshEnabled {
-		t.Fatalf("expected auto-refresh to flip to false")
-	}
-	if cmd == nil {
-		t.Fatalf("expected save command on settings change")
-	}
-	cmd()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := testModelForHotkeys(1)
+			m.Settings = config.Settings{
+				AutoRefreshEnabled:      true,
+				ActiveIntervalSec:       30,
+				BackgroundIntervalSec:   300,
+				CheckForUpdateOnStartup: true,
+			}
+			m.openSettingsOverlay()
 
-	loaded, err := config.LoadSettings()
-	if err != nil {
-		t.Fatalf("load settings: %v", err)
-	}
-	if loaded.AutoRefreshEnabled {
-		t.Fatalf("expected persisted auto-refresh disabled, got enabled")
+			for m.settingsCursor != tc.row {
+				moved, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+				m = moved.(Model)
+			}
+
+			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+			got := updated.(Model)
+			if tc.fieldGot(got.Settings) {
+				t.Fatalf("expected %s to flip to false", tc.name)
+			}
+			if cmd == nil {
+				t.Fatalf("expected save command on %s change", tc.name)
+			}
+			cmd()
+
+			loaded, err := config.LoadSettings()
+			if err != nil {
+				t.Fatalf("load settings: %v", err)
+			}
+			if tc.fieldSaved(loaded) {
+				t.Fatalf("expected persisted %s disabled, got enabled", tc.name)
+			}
+		})
 	}
 }
 
