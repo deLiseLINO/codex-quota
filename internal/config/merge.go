@@ -67,6 +67,9 @@ func mergeAccounts(left, right *Account) *Account {
 	if merged.RefreshToken == "" {
 		merged.RefreshToken = secondary.RefreshToken
 	}
+	if merged.IDToken == "" {
+		merged.IDToken = secondary.IDToken
+	}
 	merged.AccessToken, merged.ExpiresAt = chooseTokenState(primary, secondary)
 	if !merged.Writable && secondary.Writable {
 		merged.Writable = true

@@ -19,6 +19,7 @@ func ResolveFreshAccount(account *Account) (*Account, bool, error) {
 
 	changed := strings.TrimSpace(fresh.AccessToken) != strings.TrimSpace(account.AccessToken) ||
 		strings.TrimSpace(fresh.RefreshToken) != strings.TrimSpace(account.RefreshToken) ||
+		strings.TrimSpace(fresh.IDToken) != strings.TrimSpace(account.IDToken) ||
 		!fresh.ExpiresAt.Equal(account.ExpiresAt)
 
 	return cloneAccountForSync(fresh), changed, nil

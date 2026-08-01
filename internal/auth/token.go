@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -16,6 +17,13 @@ const (
 	tokenURL = "https://auth.openai.com/oauth/token"
 )
 
+func tokenEndpoint() string {
+	if value := strings.TrimSpace(os.Getenv("CQ_TOKEN_URL")); value != "" {
+		return value
+	}
+	return tokenURL
+}
+
 type refreshRequest struct {
 	GrantType    string `json:"grant_type"`
 	RefreshToken string `json:"refresh_token"`
@@ -25,6 +33,7 @@ type refreshRequest struct {
 type refreshResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
 	ExpiresIn    int64  `json:"expires_in"`
 }
 
@@ -78,7 +87,7 @@ func RefreshToken(account *config.Account) error {
 		return fmt.Errorf("failed to build refresh request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, tokenURL, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, tokenEndpoint(), bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create refresh request: %w", err)
 	}
@@ -114,6 +123,9 @@ func RefreshToken(account *config.Account) error {
 	if tokenResp.RefreshToken != "" {
 		account.RefreshToken = tokenResp.RefreshToken
 	}
+	if tokenResp.IDToken != "" {
+		account.IDToken = strings.TrimSpace(tokenResp.IDToken)
+	}
 
 	claims := config.ParseAccessToken(tokenResp.AccessToken)
 	if claims.ClientID != "" {
@@ -147,6 +159,7 @@ func copyResolvedAccount(target, source *config.Account) {
 	target.AccountID = source.AccountID
 	target.AccessToken = source.AccessToken
 	target.RefreshToken = source.RefreshToken
+	target.IDToken = source.IDToken
 	target.ExpiresAt = source.ExpiresAt
 	target.ClientID = source.ClientID
 	target.Source = source.Source

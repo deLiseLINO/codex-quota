@@ -186,6 +186,7 @@ func cloneAsManaged(account *Account) *Account {
 		AccountID:    CanonicalAccountID(accountID),
 		AccessToken:  accessToken,
 		RefreshToken: strings.TrimSpace(account.RefreshToken),
+		IDToken:      strings.TrimSpace(account.IDToken),
 		ExpiresAt:    account.ExpiresAt,
 		ClientID:     strings.TrimSpace(account.ClientID),
 		Source:       SourceManaged,
@@ -210,6 +211,9 @@ func needsManagedUpdate(existing *Account, incoming *Account) bool {
 		return true
 	}
 	if strings.TrimSpace(existing.RefreshToken) != strings.TrimSpace(merged.RefreshToken) {
+		return true
+	}
+	if strings.TrimSpace(existing.IDToken) != strings.TrimSpace(merged.IDToken) {
 		return true
 	}
 	if strings.TrimSpace(existing.ClientID) != strings.TrimSpace(merged.ClientID) {
@@ -312,6 +316,7 @@ func buildCodexAccountFromTokens(tokens map[string]any, path string) *Account {
 		AccessToken:  accessToken,
 		RefreshToken: strings.TrimSpace(asString(tokens["refresh_token"])),
 		AccountID:    strings.TrimSpace(asString(tokens["account_id"])),
+		IDToken:      strings.TrimSpace(asString(tokens["id_token"])),
 		Source:       SourceCodex,
 		FilePath:     path,
 		Writable:     true,
@@ -370,10 +375,23 @@ func saveCodexAccount(account *Account) error {
 	if account.AccountID != "" {
 		tokens["account_id"] = account.AccountID
 	}
+	tokens["id_token"] = codexIDToken(account)
 
 	root["last_refresh"] = time.Now().UTC().Format(time.RFC3339)
 
 	return writeJSONMap(account.FilePath, root)
+}
+
+// codexIDToken falls back to the access token when the account has no id_token,
+// matching Codex's own fallback for externally-managed tokens.
+func codexIDToken(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	if idToken := strings.TrimSpace(account.IDToken); idToken != "" {
+		return idToken
+	}
+	return strings.TrimSpace(account.AccessToken)
 }
 
 func finalizeAccount(account *Account) {

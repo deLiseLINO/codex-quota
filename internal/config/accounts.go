@@ -20,6 +20,7 @@ type Account struct {
 	AccountID    string
 	AccessToken  string
 	RefreshToken string
+	IDToken      string
 	ExpiresAt    time.Time
 	ClientID     string
 	Source       Source

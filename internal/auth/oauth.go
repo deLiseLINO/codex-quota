@@ -34,6 +34,7 @@ const (
 type tokenExchangeResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token"`
 	ExpiresIn    int64  `json:"expires_in"`
 }
 
@@ -234,6 +235,7 @@ func accountFromTokenResponse(tokenResp *tokenExchangeResponse) (*config.Account
 	account := &config.Account{
 		AccessToken:  tokenResp.AccessToken,
 		RefreshToken: tokenResp.RefreshToken,
+		IDToken:      strings.TrimSpace(tokenResp.IDToken),
 		ClientID:     oauthClientID,
 		Source:       config.SourceManaged,
 		Writable:     true,

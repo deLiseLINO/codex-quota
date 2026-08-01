@@ -20,6 +20,7 @@ type managedAccount struct {
 	AccountID    string `json:"account_id"`
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
+	IDToken      string `json:"id_token,omitempty"`
 	ExpiresAt    int64  `json:"expires_at_ms,omitempty"`
 	ClientID     string `json:"client_id,omitempty"`
 }
@@ -63,6 +64,7 @@ func LoadManagedAccounts() ([]*Account, error) {
 			AccountID:    strings.TrimSpace(item.AccountID),
 			AccessToken:  strings.TrimSpace(item.AccessToken),
 			RefreshToken: strings.TrimSpace(item.RefreshToken),
+			IDToken:      strings.TrimSpace(item.IDToken),
 			ClientID:     strings.TrimSpace(item.ClientID),
 			Source:       SourceManaged,
 			FilePath:     path,
@@ -140,6 +142,7 @@ func UpsertManagedAccount(account *Account) error {
 		AccountID:    strings.TrimSpace(account.AccountID),
 		AccessToken:  strings.TrimSpace(account.AccessToken),
 		RefreshToken: strings.TrimSpace(account.RefreshToken),
+		IDToken:      strings.TrimSpace(account.IDToken),
 		ClientID:     strings.TrimSpace(account.ClientID),
 	}
 	if !account.ExpiresAt.IsZero() {
@@ -181,12 +184,18 @@ func mergeManagedAccount(existing, incoming managedAccount) managedAccount {
 	if strings.TrimSpace(merged.RefreshToken) == "" {
 		merged.RefreshToken = incoming.RefreshToken
 	}
+	if strings.TrimSpace(merged.IDToken) == "" {
+		merged.IDToken = incoming.IDToken
+	}
 
 	if incoming.ExpiresAt > 0 && (existingExpiresAt == 0 || incoming.ExpiresAt > existingExpiresAt) {
 		merged.AccessToken = incoming.AccessToken
 		merged.ExpiresAt = incoming.ExpiresAt
 		if strings.TrimSpace(incoming.RefreshToken) != "" {
 			merged.RefreshToken = incoming.RefreshToken
+		}
+		if strings.TrimSpace(incoming.IDToken) != "" {
+			merged.IDToken = incoming.IDToken
 		}
 		if strings.TrimSpace(incoming.ClientID) != "" {
 			merged.ClientID = incoming.ClientID
@@ -430,6 +439,7 @@ func applyAccountToCodex(account *Account, mode targetWriteMode) (string, error)
 	if accountToWrite.AccountID != "" {
 		tokens["account_id"] = accountToWrite.AccountID
 	}
+	tokens["id_token"] = codexIDToken(accountToWrite)
 	root["last_refresh"] = time.Now().UTC().Format(time.RFC3339)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -550,6 +560,7 @@ func DeleteCodexAuthAccount() error {
 	changed = deleteMapKey(tokens, "access_token") || changed
 	changed = deleteMapKey(tokens, "refresh_token") || changed
 	changed = deleteMapKey(tokens, "account_id") || changed
+	changed = deleteMapKey(tokens, "id_token") || changed
 	if !changed {
 		return nil
 	}
