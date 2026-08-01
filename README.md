@@ -12,6 +12,7 @@ A TUI for switching between Codex accounts and monitoring quota usage, written i
 - Multi-target apply: set active account for Codex and/or OpenCode in one flow
 - Accounts from local app storage, OpenCode auth, and Codex auth
 - OAuth authentication via browser
+- Configurable auto-refresh: the active account refreshes on a short interval, the rest on a longer background interval
 - Two view modes: compact for many accounts, tabs for focused viewing when you have just a few.
 ## Installation
 
@@ -63,6 +64,7 @@ Typical flow:
 - `r` — refresh active account
 - `R` — refresh all accounts
 - `v` — switch view mode (also available via actions menu)
+- `s` — open settings (auto-refresh intervals, update check)
 - `?` — open grouped keyboard help
 - `q` / `Ctrl+C` — quit
 
