@@ -6,13 +6,26 @@ import (
 	"path/filepath"
 )
 
+const (
+	activeIntervalMinSec     = 15
+	activeIntervalMaxSec     = 600
+	backgroundIntervalMinSec = 60
+	backgroundIntervalMaxSec = 3600
+)
+
 type Settings struct {
 	CheckForUpdateOnStartup bool `json:"check_for_update_on_startup"`
+	AutoRefreshEnabled      bool `json:"auto_refresh_enabled"`
+	ActiveIntervalSec       int  `json:"active_interval_sec"`
+	BackgroundIntervalSec   int  `json:"background_interval_sec"`
 }
 
 func DefaultSettings() Settings {
 	return Settings{
 		CheckForUpdateOnStartup: true,
+		AutoRefreshEnabled:      true,
+		ActiveIntervalSec:       30,
+		BackgroundIntervalSec:   300,
 	}
 }
 
@@ -34,6 +47,15 @@ func LoadSettings() (Settings, error) {
 	if check, ok := root["check_for_update_on_startup"].(bool); ok {
 		settings.CheckForUpdateOnStartup = check
 	}
+	if enabled, ok := root["auto_refresh_enabled"].(bool); ok {
+		settings.AutoRefreshEnabled = enabled
+	}
+	if raw, ok := asInt64(root["active_interval_sec"]); ok {
+		settings.ActiveIntervalSec = clampInt(int(raw), activeIntervalMinSec, activeIntervalMaxSec)
+	}
+	if raw, ok := asInt64(root["background_interval_sec"]); ok {
+		settings.BackgroundIntervalSec = clampInt(int(raw), backgroundIntervalMinSec, backgroundIntervalMaxSec)
+	}
 
 	return settings, nil
 }
@@ -46,6 +68,9 @@ func SaveSettings(settings Settings) error {
 
 	root := map[string]any{
 		"check_for_update_on_startup": settings.CheckForUpdateOnStartup,
+		"auto_refresh_enabled":        settings.AutoRefreshEnabled,
+		"active_interval_sec":         settings.ActiveIntervalSec,
+		"background_interval_sec":     settings.BackgroundIntervalSec,
 	}
 	if err := writeJSONMap(path, root); err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)
@@ -60,4 +85,14 @@ func settingsPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "settings.json"), nil
+}
+
+func clampInt(value, min, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }
