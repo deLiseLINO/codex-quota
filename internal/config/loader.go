@@ -520,7 +520,7 @@ func loadOMPAccounts(dbPath string) ([]*Account, error) {
 		return nil, fmt.Errorf("failed to stat OMP database %s: %w", dbPath, err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := openOMPSQLite(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open OMP database %s: %w", dbPath, err)
 	}
@@ -552,7 +552,7 @@ func loadOMPAccounts(dbPath string) ([]*Account, error) {
 
 		var dataMap map[string]any
 		if err := json.Unmarshal([]byte(dataStr), &dataMap); err != nil {
-			return nil, fmt.Errorf("corrupt credential JSON in OMP database %s (row %d): %w", dbPath, id, err)
+			continue
 		}
 
 		accessToken := strings.TrimSpace(asString(dataMap["access"]))
@@ -596,19 +596,8 @@ func loadOMPAccounts(dbPath string) ([]*Account, error) {
 	return accounts, nil
 }
 
-func loadOMPAccountFile(dbPath string) (*Account, error) {
-	accounts, err := loadOMPAccounts(dbPath)
-	if err != nil {
-		return nil, err
-	}
-	if len(accounts) == 0 {
-		return nil, nil
-	}
-	return accounts[0], nil
-}
-
 func saveOMPAccount(account *Account) error {
-	_, err := ApplyAccountToOMP(account)
+	_, err := applyAccountToOMP(account, targetWriteRefresh)
 	return err
 }
 

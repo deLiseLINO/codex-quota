@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/deLiseLINO/codex-quota/internal/config"
 )
@@ -163,7 +164,7 @@ func (m Model) renderApplyTargetModal() string {
 	lines = append(lines, InfoValueStyle.Render("[↑/↓] Move   [space] Toggle   [a] Select all   [enter] Next   [esc] Cancel"))
 
 	content := strings.Join(lines, "\n")
-	return InfoBoxStyle.Copy().Width(68).Render(content)
+	return InfoBoxStyle.Copy().Width(modalWidthForLines(lines, 68)).Render(content)
 }
 
 func (m Model) renderApplyConfirmModal() string {
@@ -261,7 +262,6 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine("R", "Refresh all accounts"),
 		renderHelpLine("o", "Apply to apps (Codex/OpenCode/Pi/active OMP account)"),
 		renderHelpLine("Enter → p", "Restore CQ accounts to the OMP pool"),
-		renderHelpLine("a", "Select all Apply targets"),
 		renderHelpLine("n", "Add account"),
 		renderHelpLine("x", "Delete account"),
 		renderHelpLine("i", "Account info"),
@@ -275,7 +275,17 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine("q", "Quit"),
 		"",
 	}
-	return InfoBoxStyle.Copy().Width(56).Render(strings.Join(lines, "\n"))
+	return InfoBoxStyle.Copy().Width(modalWidthForLines(lines, 56)).Render(strings.Join(lines, "\n"))
+}
+
+func modalWidthForLines(lines []string, minimum int) int {
+	width := minimum
+	for _, line := range lines {
+		if candidate := ansi.StringWidth(line) + 2; candidate > width {
+			width = candidate
+		}
+	}
+	return width
 }
 
 func (m Model) renderAddAccountLoginModal() string {

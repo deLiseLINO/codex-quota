@@ -280,7 +280,7 @@ func (m Model) handleOMPRestoreConfirm(keyStr string) (tea.Model, tea.Cmd) {
 		m.Loading = true
 		m.Err = nil
 		m.Notice = ""
-		return m, RestoreOMPAccountsCmd()
+		return m, RestoreOMPAccountsCmd(m.activeAccountKey())
 	}
 	return m, nil
 }

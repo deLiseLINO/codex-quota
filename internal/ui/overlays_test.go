@@ -88,8 +88,8 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	if !strings.Contains(out, "o          Apply to apps") {
 		t.Fatalf("expected apply action in help modal:\n%s", out)
 	}
-	if !strings.Contains(out, "a          Select all Apply targets") {
-		t.Fatalf("expected apply select-all guidance in help modal:\n%s", out)
+	if strings.Contains(out, "Select all") {
+		t.Fatalf("did not expect apply-only select-all hotkey in global help:\n%s", out)
 	}
 	if !strings.Contains(out, "v / c      Toggle view mode") {
 		t.Fatalf("expected view mode alias guidance in help modal:\n%s", out)
@@ -99,6 +99,23 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	}
 	if strings.Contains(out, "Use the actions menu for secondary tasks") {
 		t.Fatalf("did not expect explanatory note in help modal:\n%s", out)
+	}
+}
+
+func TestHelpAndApplyModalsHaveUniformCellWidths(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+	for name, modal := range map[string]string{
+		"help":  m.renderHelpModal(),
+		"apply": m.renderApplyTargetModal(),
+	} {
+		lines := strings.Split(ansi.Strip(modal), "\n")
+		want := ansi.StringWidth(lines[0])
+		for i, line := range lines {
+			if got := ansi.StringWidth(line); got != want {
+				t.Fatalf("%s line %d width = %d, want %d\n%s", name, i, got, want, ansi.Strip(modal))
+			}
+		}
 	}
 }
 

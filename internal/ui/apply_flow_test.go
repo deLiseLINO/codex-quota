@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/deLiseLINO/codex-quota/internal/config"
 )
@@ -186,6 +188,9 @@ func TestApplyFlow_NumberKeyShortcuts(t *testing.T) {
 }
 
 func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
 	m := testModelForHotkeys(1)
 	m.startApplyFlow()
 	m.Width = 120
@@ -309,6 +314,9 @@ func TestApplyFlow_DefaultSelectionRespectsExistingFiles(t *testing.T) {
 }
 
 func TestApplyFlow_RemembersConfirmedTargetsForSession(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
 	m := testModelForHotkeys(1)
 	m.startApplyFlow()
 	m.ApplyTargets = map[config.Source]bool{config.SourceCodex: true}
@@ -384,6 +392,7 @@ func TestApplyFlow_LoadsPersistedTargetsSafely(t *testing.T) {
 
 func TestApplyFlow_PersistsConfirmedTargetsAcrossRestart(t *testing.T) {
 	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
 	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
 	m := testModelForHotkeys(1)
 	m.lastConfirmedApplyTargets = map[config.Source]bool{config.SourceCodex: true}
@@ -417,6 +426,7 @@ func TestApplyFlow_PersistsConfirmedTargetsAcrossRestart(t *testing.T) {
 
 func TestApplyTargetUIStateSaveFailureIsNonDestructive(t *testing.T) {
 	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
 	blocked := filepath.Join(tmp, "blocked")
 	if err := os.WriteFile(blocked, []byte("file"), 0o600); err != nil {
 		t.Fatal(err)
@@ -686,11 +696,57 @@ func TestApplyToTargetsCmd_Execution(t *testing.T) {
 	}
 }
 
+func TestApplyToTargetsWithPreferenceCmdBranches(t *testing.T) {
+	applyErr := errors.New("apply")
+	preferenceErr := errors.New("preference")
+	tests := []struct {
+		name string
+		msg  tea.Msg
+	}{
+		{"accounts", AccountsMsg{Notice: "applied"}},
+		{"notice", NoticeMsg{Text: "applied"}},
+		{"error", ErrMsg{Err: applyErr}},
+		{"other", struct{}{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := ApplyToTargetsWithPreferenceCmd(func() tea.Msg { return test.msg }, preferenceErr)()
+			switch result := got.(type) {
+			case AccountsMsg:
+				if !strings.Contains(result.Notice, "preference was not saved") {
+					t.Fatal(result.Notice)
+				}
+			case NoticeMsg:
+				if !strings.Contains(result.Text, "preference was not saved") {
+					t.Fatal(result.Text)
+				}
+			case ErrMsg:
+				if !errors.Is(result.Err, applyErr) || !errors.Is(result.Err, preferenceErr) {
+					t.Fatalf("joined error does not preserve causes: %v", result.Err)
+				}
+			default:
+				t.Fatalf("unexpected result %T", got)
+			}
+		})
+	}
+	original := NoticeMsg{Text: "applied"}
+	if got := ApplyToTargetsWithPreferenceCmd(func() tea.Msg { return original }, nil)(); !reflect.DeepEqual(got, original) {
+		t.Fatalf("nil preference error changed result: %#v", got)
+	}
+	if ApplyToTargetsWithPreferenceCmd(nil, preferenceErr) != nil {
+		t.Fatal("nil apply command should remain nil")
+	}
+}
+
 func TestRestoreOMPAccountsCmdImmediatelyMarksAllManagedAccounts(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
 	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "omp", "agent.db"))
+	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
+	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(tmp, "opencode", "auth.json"))
+	t.Setenv("OPENCODE_DATA_DIR", filepath.Join(tmp, "opencode-data"))
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "pi", "auth.json"))
 	for _, account := range []*config.Account{
 		{Label: "one", AccountID: "acc-1", Email: "one@omp.sh", AccessToken: "tok-1"},
 		{Label: "two", AccountID: "acc-2", Email: "two@omp.sh", AccessToken: "tok-2"},
@@ -699,10 +755,13 @@ func TestRestoreOMPAccountsCmdImmediatelyMarksAllManagedAccounts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	msg := RestoreOMPAccountsCmd()()
+	msg := RestoreOMPAccountsCmd("managed:2")()
 	accountsMsg, ok := msg.(AccountsMsg)
 	if !ok {
 		t.Fatalf("restore command returned %T: %#v", msg, msg)
+	}
+	if accountsMsg.ActiveKey != "managed:2" {
+		t.Fatalf("restore active key = %q, want managed:2", accountsMsg.ActiveKey)
 	}
 	m := testModelForHotkeys(1)
 	updated, _ := m.Update(accountsMsg)
@@ -721,9 +780,14 @@ func TestRestoreOMPAccountsCmdImmediatelyMarksAllManagedAccounts(t *testing.T) {
 
 func TestRestoreOMPAccountsCmdSurfacesErrors(t *testing.T) {
 	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
 	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
 	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "omp", "agent.db"))
-	msg := RestoreOMPAccountsCmd()()
+	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
+	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(tmp, "opencode", "auth.json"))
+	t.Setenv("OPENCODE_DATA_DIR", filepath.Join(tmp, "opencode-data"))
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "pi", "auth.json"))
+	msg := RestoreOMPAccountsCmd("")()
 	errMsg, ok := msg.(ErrMsg)
 	if !ok || errMsg.Err == nil {
 		t.Fatalf("expected restore error, got %#v", msg)

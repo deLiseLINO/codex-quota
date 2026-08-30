@@ -85,17 +85,12 @@ func LoadUIState() (UIState, error) {
 	}
 	if targetsAny, ok := root["last_apply_targets"].([]any); ok {
 		targets := make([]string, 0, len(targetsAny))
-		seen := make(map[string]bool, len(targetsAny))
 		for _, raw := range targetsAny {
-			target, ok := raw.(string)
-			target = strings.TrimSpace(target)
-			if !ok || target == "" || seen[target] {
-				continue
+			if target, ok := raw.(string); ok {
+				targets = append(targets, target)
 			}
-			seen[target] = true
-			targets = append(targets, target)
 		}
-		state.LastApplyTargets = targets
+		state.LastApplyTargets = normalizeLastApplyTargets(targets)
 	}
 
 	return state, nil

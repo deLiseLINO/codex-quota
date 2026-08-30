@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -190,14 +191,14 @@ func ApplyToTargetsWithPreferenceCmd(applyCmd tea.Cmd, preferenceErr error) tea.
 			result.Text = strings.TrimSpace(result.Text + " (apply target preference was not saved)")
 			return result
 		case ErrMsg:
-			result.Err = fmt.Errorf("%w; apply target preference was not saved: %v", result.Err, preferenceErr)
+			result.Err = errors.Join(result.Err, fmt.Errorf("apply target preference was not saved: %w", preferenceErr))
 			return result
 		}
 		return NoticeMsg{Text: fmt.Sprintf("apply target preference was not saved: %v", preferenceErr)}
 	}
 }
 
-func RestoreOMPAccountsCmd() tea.Cmd {
+func RestoreOMPAccountsCmd(activeKey string) tea.Cmd {
 	return func() tea.Msg {
 		count, path, err := config.RestoreManagedAccountsToOMP()
 		if err != nil {
@@ -207,7 +208,9 @@ func RestoreOMPAccountsCmd() tea.Cmd {
 		if err != nil {
 			return ErrMsg{Err: fmt.Errorf("failed to reload accounts: %w", err)}
 		}
+		activeKey = strings.TrimSpace(activeKey)
 		return AccountsMsg{
+			ActiveKey:               activeKey,
 			Accounts:                result.Accounts,
 			SourcesByAccountID:      result.SourcesByAccountID,
 			ActiveSourcesByIdentity: result.ActiveSourcesByIdentity,

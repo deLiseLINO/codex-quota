@@ -197,7 +197,44 @@ func setupSyncTestEnv(t *testing.T) {
 	t.Setenv("CODEX_HOME", tmp+"/app-a")
 	t.Setenv("OPENCODE_AUTH_PATH", tmp+"/app-b/auth.json")
 	t.Setenv("OPENCODE_DATA_DIR", tmp+"/opencode-data")
+	t.Setenv("CQ_PI_AUTH_PATH", tmp+"/pi/auth.json")
+	t.Setenv("CQ_OMP_DB_PATH", tmp+"/omp/agent.db")
 	t.Setenv("HOME", tmp+"/home")
+}
+
+func TestOMPRefreshPreservesRestoredPool(t *testing.T) {
+	setupSyncTestEnv(t)
+	first := &Account{AccountID: "acc-1", Email: "one@example.com", AccessToken: "old-1", Source: SourceManaged, Writable: true}
+	second := &Account{AccountID: "acc-2", Email: "two@example.com", AccessToken: "old-2", Source: SourceManaged, Writable: true}
+	for _, account := range []*Account{first, second} {
+		if err := UpsertManagedAccount(account); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if count, _, err := RestoreManagedAccountsToOMP(); err != nil || count != 2 {
+		t.Fatalf("restore pool: count=%d err=%v", count, err)
+	}
+	first.AccessToken = "sync-1"
+	if err := SyncAccountEverywhere(first); err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := loadOMPAccounts(ompAgentDbPath())
+	if err != nil || len(accounts) != 2 {
+		t.Fatalf("pool after sync: accounts=%d err=%v", len(accounts), err)
+	}
+	first.AccessToken = "save-1"
+	if err := saveOMPAccount(first); err != nil {
+		t.Fatal(err)
+	}
+	accounts, err = loadOMPAccounts(ompAgentDbPath())
+	if err != nil || len(accounts) != 2 {
+		t.Fatalf("pool after save: accounts=%d err=%v", len(accounts), err)
+	}
+	for _, account := range accounts {
+		if account.AccountID == first.AccountID && account.AccessToken != "save-1" {
+			t.Fatalf("refreshed account token = %q", account.AccessToken)
+		}
+	}
 }
 
 func TestApplyAccountToTargetKeepsFresherExistingTargetBundle(t *testing.T) {

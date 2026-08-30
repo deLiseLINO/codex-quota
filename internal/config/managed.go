@@ -725,6 +725,13 @@ func applyAccountToOMP(account *Account, mode targetWriteMode) (string, error) {
 		return "", err
 	}
 
+	if mode == targetWriteRefresh {
+		if err := tx.Commit(); err != nil {
+			return "", fmt.Errorf("failed to commit OMP credential refresh in %s: %w", path, err)
+		}
+		return path, nil
+	}
+
 	var hasCacheTable int
 	if err := tx.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'cache'").Scan(&hasCacheTable); err != nil {
 		return "", fmt.Errorf("failed to inspect OMP cache table in %s: %w", path, err)
@@ -761,11 +768,10 @@ func openOMPDatabase(path string) (*sql.DB, error) {
 		_ = f.Close()
 		_ = os.Chmod(path, 0o600)
 	}
-	db, err := sql.Open("sqlite", path)
+	db, err := openOMPSQLite(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database %s: %w", path, err)
 	}
-	_, _ = db.Exec("PRAGMA busy_timeout = 5000;")
 	_, err = db.Exec(`
 		PRAGMA journal_mode = WAL;
 		PRAGMA synchronous = NORMAL;
@@ -783,6 +789,19 @@ func openOMPDatabase(path string) (*sql.DB, error) {
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to initialize schema in %s: %w", path, err)
+	}
+	return db, nil
+}
+
+func openOMPSQLite(path string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA busy_timeout = 5000;"); err != nil {
+		db.Close()
+		return nil, err
 	}
 	return db, nil
 }
@@ -979,13 +998,11 @@ func DeleteOMPAuthAccount(account *Account) error {
 	if account == nil {
 		return nil
 	}
-
 	accountID := strings.TrimSpace(account.AccountID)
-	email := strings.TrimSpace(account.Email)
+	email := normalizeEmail(account.Email)
 	if accountID == "" && email == "" {
 		return nil
 	}
-
 	path := ompAgentDbPath()
 	if strings.TrimSpace(path) == "" {
 		return nil
@@ -993,43 +1010,65 @@ func DeleteOMPAuthAccount(account *Account) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil
 	}
-
-	db, err := sql.Open("sqlite", path)
+	db, err := openOMPSQLite(path)
 	if err != nil {
 		return fmt.Errorf("failed to open %s: %w", path, err)
 	}
 	defer db.Close()
-
-	_, _ = db.Exec("PRAGMA busy_timeout = 5000;")
-
-	identityKey := ""
-	if accountID != "" {
-		identityKey = "account:" + accountID
-	}
-	if email != "" {
-		identityKey = "email:" + strings.ToLower(email)
-	}
-
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction in %s: %w", path, err)
 	}
+	defer tx.Rollback()
 
-	if identityKey != "" && accountID != "" && email != "" {
-		_, err = tx.Exec("DELETE FROM auth_credentials WHERE provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.accountId') = ? OR json_extract(data, '$.email') = ?)", identityKey, accountID, email)
-	} else if accountID != "" {
-		_, err = tx.Exec("DELETE FROM auth_credentials WHERE provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.accountId') = ?)", identityKey, accountID)
-	} else {
-		_, err = tx.Exec("DELETE FROM auth_credentials WHERE provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.email') = ?)", identityKey, email)
+	identityKey := "email:" + email
+	query := "provider = 'openai-codex' AND (identity_key = ? OR lower(json_extract(data, '$.email')) = ?)"
+	args := []any{identityKey, email}
+	if accountID != "" {
+		identityKey = "account:" + accountID
+		query = "provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.accountId') = ?)"
+		args = []any{identityKey, accountID}
+		if email != "" {
+			query = "provider = 'openai-codex' AND (identity_key IN (?, ?) OR json_extract(data, '$.accountId') = ? OR lower(json_extract(data, '$.email')) = ?)"
+			args = []any{"account:" + accountID, "email:" + email, accountID, email}
+		}
 	}
-
-	if err == nil {
-		err = tx.Commit()
-	} else {
-		_ = tx.Rollback()
-	}
-
+	rows, err := tx.Query("SELECT id FROM auth_credentials WHERE "+query, args...)
 	if err != nil {
+		return fmt.Errorf("failed to select account from %s: %w", path, err)
+	}
+	var ids []any
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return fmt.Errorf("failed to scan account in %s: %w", path, err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("failed to read accounts in %s: %w", path, err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("failed to read accounts in %s: %w", path, err)
+	}
+	if len(ids) > 0 {
+		var hasCacheTable int
+		if err := tx.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'cache'").Scan(&hasCacheTable); err != nil {
+			return fmt.Errorf("failed to inspect OMP cache table in %s: %w", path, err)
+		}
+		placeholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+		if hasCacheTable != 0 {
+			if _, err := tx.Exec("DELETE FROM cache WHERE key LIKE 'session:sticky:openai-codex:%' AND CAST(json_extract(value, '$.credentialId') AS INTEGER) IN ("+placeholders+")", ids...); err != nil {
+				return fmt.Errorf("failed to clear OMP sticky cache entries in %s: %w", path, err)
+			}
+		}
+		if _, err := tx.Exec("DELETE FROM auth_credentials WHERE id IN ("+placeholders+")", ids...); err != nil {
+			return fmt.Errorf("failed to delete account from %s: %w", path, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to delete account from %s: %w", path, err)
 	}
 	return nil

@@ -9,8 +9,8 @@ A TUI for switching between Codex accounts and monitoring quota usage, written i
 ## Features
 
 - Fast account switching across many accounts
-- Multi-target apply: set the active credential for Codex, OpenCode, and Pi agent, plus the one active Oh My Pi (OMP) account
-- Accounts loaded from local app storage, OpenCode auth, Codex auth, Pi agent auth (`~/.pi/agent/auth.json`), and OMP's active account (`~/.omp/agent/agent.db`)
+- Multi-target apply: set the active credential for Codex, OpenCode, Pi agent, and OMP
+- Accounts loaded from CQ storage plus the external Codex, OpenCode, Pi (`~/.pi/agent/auth.json`), and active-profile OMP (`~/.omp/agent/agent.db`) stores
 - OAuth authentication via browser
 - Configurable auto-refresh: the active account refreshes on a short interval, the rest on a longer background interval
 - Two view modes: compact for many accounts, tabs for focused viewing when you have just a few.
@@ -54,11 +54,11 @@ Typical flow:
 1. Press `n` to add/import account via OAuth.
 2. Move between accounts with arrows.
 3. Press `Enter` to open the actions menu for the active account and app-level actions.
-4. Press `o` to apply the active account to selected apps (Codex/OpenCode/Pi/the active OMP account).
+4. Press `o` to apply the active account to selected apps (Codex/OpenCode/Pi/OMP).
 5. Use `r`/`R` to refresh quota and `?` for grouped keyboard help.
 
-> **OMP ownership:** Selecting OMP gives CQ exclusive control of its Codex credential: it keeps one active OMP account and removes the other OMP Codex rows. Your managed account copies remain in CQ for later switching.
-> To return OMP to its native multi-account auto-balancing pool, open the actions menu and choose **Restore all accounts to OMP pool**. This mirrors CQ's managed accounts into OMP; applying one account to OMP later returns it to CQ-exclusive single-account mode.
+> **External OMP modes:** Applying an account to OMP switches its external credential store to **exclusive mode**: exactly that one OpenAI Codex credential remains. CQ's managed copies are not deleted.
+> Choose **Restore all accounts to OMP pool** to switch the external OMP store back to **pool mode**: every eligible CQ-managed account is mirrored into OMP for native multi-account auto-balancing. Applying one account to OMP later returns the external store to exclusive mode.
 > CQ remembers your last confirmed Apply target choice for the next launch; canceling the Apply modal does not change it.
 
 ## Controls
@@ -75,7 +75,7 @@ Typical flow:
 Additional shortcuts:
 
 - `h` `j` `k` `l` — Vim-style navigation
-- `o` — apply active account to targets (Codex, OpenCode, Pi, active OMP account)
+- `o` — apply active account to targets (Codex, OpenCode, Pi, OMP)
 - `i` — toggle additional info
 - `n` — add account (OAuth)
 - `x` — delete active account

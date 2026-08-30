@@ -101,6 +101,15 @@ func TestDedupeAccounts_MergesByAccountIDWhenEmailMissingOnOneSide(t *testing.T)
 	}
 }
 
+func TestAccountPriorityIncludesEveryExternalSource(t *testing.T) {
+	sources := []Source{SourceManaged, SourceOpenCode, SourceCodex, SourcePi, SourceOMP}
+	for i := 1; i < len(sources); i++ {
+		if accountPriority(&Account{Source: sources[i-1]}) <= accountPriority(&Account{Source: sources[i]}) {
+			t.Fatalf("%s should outrank %s", sources[i-1], sources[i])
+		}
+	}
+}
+
 func TestFinalizeAccount_ReplacesTechnicalLabelWithEmail(t *testing.T) {
 	accountID := "98609d8a-85fb-4ff8-aee2-9344e68fbe3f"
 

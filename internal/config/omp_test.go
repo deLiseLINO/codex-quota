@@ -382,6 +382,7 @@ func TestRestoreManagedAccountsToOMP_MirrorsPoolAndPreservesRows(t *testing.T) {
 
 func TestRestoreManagedAccountsToOMP_RejectsInvalidInputWithoutMutation(t *testing.T) {
 	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
 	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
 	dbPath := filepath.Join(tmp, "agent.db")
 	t.Setenv("CQ_OMP_DB_PATH", dbPath)
@@ -406,6 +407,7 @@ func TestRestoreManagedAccountsToOMP_RejectsInvalidInputWithoutMutation(t *testi
 
 func TestRestoreManagedAccountsToOMP_EmptyManagedStoreDoesNotMutate(t *testing.T) {
 	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
 	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
 	dbPath := filepath.Join(tmp, "agent.db")
 	t.Setenv("CQ_OMP_DB_PATH", dbPath)
@@ -423,6 +425,7 @@ func TestRestoreManagedAccountsToOMP_EmptyManagedStoreDoesNotMutate(t *testing.T
 
 func TestApplyAccountToOMP_CollapsesRestoredPool(t *testing.T) {
 	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
 	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
 	dbPath := filepath.Join(tmp, "agent.db")
 	t.Setenv("CQ_OMP_DB_PATH", dbPath)
@@ -720,6 +723,76 @@ func TestOMPDatabase_DeleteAndManagedSafety(t *testing.T) {
 	}
 }
 
+func TestDeleteOMPClearsOnlyDeletedStickyCacheTransactionally(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
+	dbPath := filepath.Join(tmp, "agent.db")
+	t.Setenv("CQ_OMP_DB_PATH", dbPath)
+	for _, account := range []*Account{
+		{AccountID: "acc-1", Email: "one@example.com", AccessToken: "tok-1"},
+		{AccountID: "acc-2", Email: "two@example.com", AccessToken: "tok-2"},
+	} {
+		if err := UpsertManagedAccount(account); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := RestoreManagedAccountsToOMP(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE cache (key TEXT PRIMARY KEY, value TEXT);
+		INSERT INTO cache SELECT 'session:sticky:openai-codex:one', json_object('credentialId', id) FROM auth_credentials WHERE json_extract(data, '$.accountId') = 'acc-1';
+		INSERT INTO cache SELECT 'session:sticky:openai-codex:two', json_object('credentialId', id) FROM auth_credentials WHERE json_extract(data, '$.accountId') = 'acc-2';
+		INSERT INTO cache VALUES ('unrelated', '{"credentialId":999}');
+		CREATE TRIGGER block_delete BEFORE DELETE ON auth_credentials BEGIN SELECT RAISE(ABORT, 'blocked'); END;
+	`); err != nil {
+		t.Fatal(err)
+	}
+	first := &Account{AccountID: "acc-1", Email: "one@example.com"}
+	if err := DeleteOMPAuthAccount(first); err == nil {
+		t.Fatal("expected triggered delete failure")
+	}
+	var stickyOne int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM cache WHERE key = 'session:sticky:openai-codex:one'`).Scan(&stickyOne); err != nil || stickyOne != 1 {
+		t.Fatalf("cache deletion was not rolled back: count=%d err=%v", stickyOne, err)
+	}
+	if _, err := db.Exec("DROP TRIGGER block_delete"); err != nil {
+		t.Fatal(err)
+	}
+	if err := DeleteOMPAuthAccount(first); err != nil {
+		t.Fatal(err)
+	}
+	var stickyTwo, unrelated, secondCredential int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM cache WHERE key = 'session:sticky:openai-codex:one'`).Scan(&stickyOne)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM cache WHERE key = 'session:sticky:openai-codex:two'`).Scan(&stickyTwo)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM cache WHERE key = 'unrelated'`).Scan(&unrelated)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM auth_credentials WHERE json_extract(data, '$.accountId') = 'acc-2'`).Scan(&secondCredential)
+	if stickyOne != 0 || stickyTwo != 1 || unrelated != 1 || secondCredential != 1 {
+		t.Fatalf("unexpected retained rows: deleted=%d other=%d unrelated=%d credential=%d", stickyOne, stickyTwo, unrelated, secondCredential)
+	}
+}
+
+func TestOpenOMPSQLiteConfiguresEveryConnection(t *testing.T) {
+	db, err := openOMPSQLite(filepath.Join(t.TempDir(), "agent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if db.Stats().MaxOpenConnections != 1 {
+		t.Fatalf("MaxOpenConnections = %d", db.Stats().MaxOpenConnections)
+	}
+	var timeout int
+	if err := db.QueryRow("PRAGMA busy_timeout").Scan(&timeout); err != nil || timeout != 5000 {
+		t.Fatalf("busy_timeout = %d, err=%v", timeout, err)
+	}
+}
+
 func TestOMPDatabase_IdentityEdgeCasesAndDisabledRows(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
@@ -785,8 +858,15 @@ func TestOMPDatabase_ErrorHandlingAndCorruption(t *testing.T) {
 	if err != nil || accts != nil {
 		t.Errorf("uninitialized db: got %v, err %v", accts, err)
 	}
+	corruptFilePath := filepath.Join(tmp, "not-sqlite.db")
+	if err := os.WriteFile(corruptFilePath, []byte("not a sqlite database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadOMPAccounts(corruptFilePath); err == nil {
+		t.Fatal("expected database error from corrupt SQLite file")
+	}
 
-	// Corrupted JSON inside database returns contextual error naming the row
+	// Malformed JSON rows are skipped while valid rows still load.
 	corruptDbPath := filepath.Join(tmp, "corrupt.db")
 	db, err := sql.Open("sqlite", corruptDbPath)
 	if err != nil {
@@ -804,56 +884,15 @@ func TestOMPDatabase_ErrorHandlingAndCorruption(t *testing.T) {
 		INSERT INTO auth_credentials (provider, credential_type, data, identity_key)
 		VALUES ('openai-codex', 'oauth', 'not-valid-json{{{', 'account:corrupt');
 	`)
+	_, _ = db.Exec(`INSERT INTO auth_credentials (provider, credential_type, data, identity_key) VALUES ('openai-codex', 'oauth', '{"access":"valid","accountId":"valid"}', 'account:valid')`)
 	db.Close()
 
-	_, err = loadOMPAccounts(corruptDbPath)
-	if err == nil {
-		t.Fatalf("expected error on corrupt JSON in database, got nil")
+	accounts, err := loadOMPAccounts(corruptDbPath)
+	if err != nil {
+		t.Fatalf("malformed row should be skipped: %v", err)
 	}
-	if !strings.Contains(err.Error(), "corrupt credential JSON") {
-		t.Errorf("expected error message to mention corrupt credential JSON, got: %v", err)
-	}
-}
-
-func TestLoadOMPAccountFile_VariantsAndErrors(t *testing.T) {
-	tmp := t.TempDir()
-	dbPath := filepath.Join(tmp, "variants.db")
-
-	// 1. Zero rows in table returns nil, nil
-	db, _ := sql.Open("sqlite", dbPath)
-	_, _ = db.Exec(`CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, credential_type TEXT NOT NULL, data TEXT NOT NULL, disabled_cause TEXT, identity_key TEXT);`)
-	db.Close()
-
-	acct, err := loadOMPAccountFile(dbPath)
-	if err != nil || acct != nil {
-		t.Errorf("zero rows: got acct=%v, err=%v, want nil, nil", acct, err)
-	}
-
-	// 2. Multiple rows returns the first account
-	db, _ = sql.Open("sqlite", dbPath)
-	p1, _ := json.Marshal(map[string]any{"access": "tok-first", "accountId": "acc-first"})
-	p2, _ := json.Marshal(map[string]any{"access": "tok-second", "accountId": "acc-second"})
-	_, _ = db.Exec(`INSERT INTO auth_credentials (provider, credential_type, data, identity_key) VALUES ('openai-codex', 'oauth', ?, 'account:acc-first')`, string(p1))
-	_, _ = db.Exec(`INSERT INTO auth_credentials (provider, credential_type, data, identity_key) VALUES ('openai-codex', 'oauth', ?, 'account:acc-second')`, string(p2))
-	db.Close()
-
-	firstAcct, err := loadOMPAccountFile(dbPath)
-	if err != nil || firstAcct == nil {
-		t.Fatalf("multiple rows load error: %v", err)
-	}
-	if firstAcct.AccountID != "acc-first" {
-		t.Errorf("expected first account acc-first, got %q", firstAcct.AccountID)
-	}
-
-	// 3. Corrupt DB propagates error
-	corruptDb := filepath.Join(tmp, "corrupt_file.db")
-	dbCorrupt, _ := sql.Open("sqlite", corruptDb)
-	_, _ = dbCorrupt.Exec(`CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT, disabled_cause TEXT, identity_key TEXT); INSERT INTO auth_credentials (provider, credential_type, data, identity_key) VALUES ('openai-codex', 'oauth', 'bad-json', 'account:1');`)
-	dbCorrupt.Close()
-
-	_, err = loadOMPAccountFile(corruptDb)
-	if err == nil {
-		t.Errorf("expected error from loadOMPAccountFile on corrupt DB, got nil")
+	if len(accounts) != 1 || accounts[0].AccountID != "valid" {
+		t.Fatalf("loaded accounts = %#v, want only valid row", accounts)
 	}
 }
 

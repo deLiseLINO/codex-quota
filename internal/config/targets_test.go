@@ -15,6 +15,7 @@ import (
 func TestApplyAccountToTarget_AllSources(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
 	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
 	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(tmp, "opencode", "auth.json"))
 	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "pi", "auth.json"))
@@ -70,6 +71,7 @@ func TestApplyAccountToTarget_AllSources(t *testing.T) {
 func TestApplyAccountToTargets_BatchExecutionAndDedupe(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
 	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
 	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(tmp, "opencode", "auth.json"))
 	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "pi", "auth.json"))
@@ -123,30 +125,62 @@ func TestDeleteAccountFromSource_AllSources(t *testing.T) {
 	// Pre-apply to all targets
 	_, _ = ApplyAccountToTargets(acct, []Source{SourceCodex, SourceOpenCode, SourcePi, SourceOMP})
 	_ = UpsertManagedAccount(acct)
+	ompDB, err := sql.Open("sqlite", filepath.Join(tmp, "omp", "agent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ompDB.Exec(`INSERT INTO auth_credentials (provider, credential_type, data) VALUES ('anthropic', 'api-key', '{"key":"keep"}')`); err != nil {
+		t.Fatal(err)
+	}
+	ompDB.Close()
 
 	// 1. Delete from Managed
 	if err := DeleteAccountFromSource(acct, SourceManaged); err != nil {
 		t.Errorf("delete managed: %v", err)
+	}
+	if managed, err := LoadManagedAccounts(); err != nil || len(managed) != 0 {
+		t.Fatalf("managed removal: accounts=%#v err=%v", managed, err)
 	}
 
 	// 2. Delete from Codex
 	if err := DeleteAccountFromSource(acct, SourceCodex); err != nil {
 		t.Errorf("delete codex: %v", err)
 	}
+	if codex, err := loadCodexAccountFile(codexAuthPath()); err != nil || codex != nil {
+		t.Fatalf("codex removal: account=%#v err=%v", codex, err)
+	}
 
 	// 3. Delete from OpenCode
 	if err := DeleteAccountFromSource(acct, SourceOpenCode); err != nil {
 		t.Errorf("delete opencode: %v", err)
+	}
+	if openCode, err := loadOpenCodeAccountFile(opencodeAuthPath(), SourceOpenCode, true); err != nil || openCode != nil {
+		t.Fatalf("opencode removal: account=%#v err=%v", openCode, err)
 	}
 
 	// 4. Delete from Pi
 	if err := DeleteAccountFromSource(acct, SourcePi); err != nil {
 		t.Errorf("delete pi: %v", err)
 	}
+	if pi, err := loadPiAccountFile(piAuthPath(), SourcePi, true); err != nil || pi != nil {
+		t.Fatalf("pi removal: account=%#v err=%v", pi, err)
+	}
 
 	// 5. Delete from OMP
 	if err := DeleteAccountFromSource(acct, SourceOMP); err != nil {
 		t.Errorf("delete omp: %v", err)
+	}
+	if omp, err := loadOMPAccounts(ompAgentDbPath()); err != nil || len(omp) != 0 {
+		t.Fatalf("OMP removal: accounts=%#v err=%v", omp, err)
+	}
+	ompDB, err = sql.Open("sqlite", ompAgentDbPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ompDB.Close()
+	var providers int
+	if err := ompDB.QueryRow(`SELECT COUNT(*) FROM auth_credentials WHERE provider = 'anthropic' AND json_extract(data, '$.key') = 'keep'`).Scan(&providers); err != nil || providers != 1 {
+		t.Fatalf("unrelated provider changed: count=%d err=%v", providers, err)
 	}
 
 	// 6. Unsupported source

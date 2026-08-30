@@ -57,6 +57,13 @@ func TestOMPRealCLISmokeTest(t *testing.T) {
 	if count, _, err := RestoreManagedAccountsToOMP(); err != nil || count != 3 || listCount() != 3 {
 		t.Fatalf("restore smoke = count %d, err %v", count, err)
 	}
+	selected.AccessToken = "tok-real-cli-smoke-refreshed"
+	if err := saveOMPAccount(selected); err != nil {
+		t.Fatalf("refresh smoke: %v", err)
+	}
+	if got := listCount(); got != 3 {
+		t.Fatalf("expected three OMP credentials after refresh, got %d", got)
+	}
 	if appliedPath, err := ApplyAccountToOMP(selected); err != nil || appliedPath != dbPath {
 		t.Fatalf("exclusive apply smoke = %q, %v", appliedPath, err)
 	}
