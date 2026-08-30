@@ -93,7 +93,7 @@ func (m Model) renderActiveSourceBadges(account *config.Account, isRowActive boo
 		case 'P':
 			b.WriteString(pStyle.Render("P"))
 		case 'M':
-			b.WriteString(mStyle.Render("M"))
+			b.WriteString(mStyle.Render("O"))
 		case '•':
 			b.WriteString(SourceBadgeSeparatorStyle.Render("•"))
 		default:

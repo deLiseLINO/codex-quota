@@ -834,10 +834,10 @@ func TestBadges_EdgeCasesAndEmptySources(t *testing.T) {
 	if outActive == "" || outMuted == "" {
 		t.Errorf("expected rendered badges for all 4 sources")
 	}
-	if !strings.Contains(outActive, "C") || !strings.Contains(outActive, "O") || !strings.Contains(outActive, "P") || !strings.Contains(outActive, "M") {
-		t.Errorf("expected all 4 letters in rendered badges, got: %s", outActive)
+	if strings.Count(outActive, "O") != 2 || !strings.Contains(outActive, "C") || !strings.Contains(outActive, "P") {
+		t.Errorf("expected C, two O letters (OpenCode + OMP) and P in rendered badges, got: %s", outActive)
 	}
-	if !strings.Contains(outMuted, "C") || !strings.Contains(outMuted, "O") || !strings.Contains(outMuted, "P") || !strings.Contains(outMuted, "M") {
-		t.Errorf("expected all 4 letters in muted rendered badges, got: %s", outMuted)
+	if strings.Count(outMuted, "O") != 2 || !strings.Contains(outMuted, "C") || !strings.Contains(outMuted, "P") {
+		t.Errorf("expected C, two O letters (OpenCode + OMP) and P in muted rendered badges, got: %s", outMuted)
 	}
 }
