@@ -778,6 +778,62 @@ func TestDeleteOMPClearsOnlyDeletedStickyCacheTransactionally(t *testing.T) {
 	}
 }
 
+func TestDeleteOMPAccountIDSurvivesSameEmailCollision(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	dbPath := filepath.Join(tmp, "agent.db")
+	t.Setenv("CQ_OMP_DB_PATH", dbPath)
+
+	db, err := openOMPDatabase(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := &Account{AccountID: "acc-1", Email: "shared@example.com", AccessToken: "tok-1"}
+	second := &Account{AccountID: "acc-2", Email: "shared@example.com", AccessToken: "tok-2"}
+	firstID, err := upsertOMPCredential(tx, dbPath, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondID, err := upsertOMPCredential(tx, dbPath, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("CREATE TABLE cache (key TEXT PRIMARY KEY, value TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO cache VALUES ('session:sticky:openai-codex:first', json_object('credentialId', ?))", firstID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO cache VALUES ('session:sticky:openai-codex:second', json_object('credentialId', ?))", secondID); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	if err := DeleteOMPAuthAccount(first); err != nil {
+		t.Fatal(err)
+	}
+	db, err = sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var firstCredential, secondCredential, firstSticky, secondSticky int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM auth_credentials WHERE json_extract(data, '$.accountId') = 'acc-1'`).Scan(&firstCredential)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM auth_credentials WHERE json_extract(data, '$.accountId') = 'acc-2'`).Scan(&secondCredential)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM cache WHERE key = 'session:sticky:openai-codex:first'`).Scan(&firstSticky)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM cache WHERE key = 'session:sticky:openai-codex:second'`).Scan(&secondSticky)
+	if firstCredential != 0 || firstSticky != 0 || secondCredential != 1 || secondSticky != 1 {
+		t.Fatalf("collision delete: first credential=%d sticky=%d; sibling credential=%d sticky=%d", firstCredential, firstSticky, secondCredential, secondSticky)
+	}
+}
+
 func TestOpenOMPSQLiteConfiguresEveryConnection(t *testing.T) {
 	db, err := openOMPSQLite(filepath.Join(t.TempDir(), "agent.db"))
 	if err != nil {

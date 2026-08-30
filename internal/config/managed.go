@@ -1029,8 +1029,8 @@ func DeleteOMPAuthAccount(account *Account) error {
 		query = "provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.accountId') = ?)"
 		args = []any{identityKey, accountID}
 		if email != "" {
-			query = "provider = 'openai-codex' AND (identity_key IN (?, ?) OR json_extract(data, '$.accountId') = ? OR lower(json_extract(data, '$.email')) = ?)"
-			args = []any{"account:" + accountID, "email:" + email, accountID, email}
+			query = "provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.accountId') = ? OR ((json_extract(data, '$.accountId') IS NULL OR trim(json_extract(data, '$.accountId')) = '') AND (identity_key IS NULL OR identity_key NOT LIKE 'account:%') AND (identity_key = ? OR lower(json_extract(data, '$.email')) = ?)))"
+			args = []any{identityKey, accountID, "email:" + email, email}
 		}
 	}
 	rows, err := tx.Query("SELECT id FROM auth_credentials WHERE "+query, args...)
