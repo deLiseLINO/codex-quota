@@ -15,6 +15,7 @@ func TestUIStateRoundTrip(t *testing.T) {
 		ExhaustedAccountKeys: []string{"managed:1", "codex:2"},
 		AccountOrderKeys:     []string{"acc-2", "acc-1"},
 		ActiveAccountKey:     "managed:2",
+		LastApplyTargets:     []string{"codex", "omp"},
 	}
 	if err := SaveUIState(initial); err != nil {
 		t.Fatalf("save ui state: %v", err)
@@ -45,6 +46,24 @@ func TestUIStateRoundTrip(t *testing.T) {
 	}
 	if loaded.ActiveAccountKey != initial.ActiveAccountKey {
 		t.Fatalf("active account key mismatch: got %q, want %q", loaded.ActiveAccountKey, initial.ActiveAccountKey)
+	}
+	if got := loaded.LastApplyTargets; len(got) != 2 || got[0] != "codex" || got[1] != "omp" {
+		t.Fatalf("apply targets mismatch: %v", got)
+	}
+}
+
+func TestSaveUIStateApplyTargetsUsesDeterministicValidOrder(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", tmp)
+	if err := SaveUIState(UIState{LastApplyTargets: []string{"omp", "unknown", "codex", "omp"}}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := state.LastApplyTargets; len(got) != 2 || got[0] != "codex" || got[1] != "omp" {
+		t.Fatalf("deterministic targets = %v", got)
 	}
 }
 
@@ -136,6 +155,26 @@ func TestLoadUIStateOldFormatWithoutPlanTypes(t *testing.T) {
 	}
 	if len(loaded.PlanTypes) != 0 {
 		t.Fatalf("expected empty plan types for old format, got %d", len(loaded.PlanTypes))
+	}
+}
+
+func TestLoadUIStateApplyTargetsFiltersMalformedValues(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", tmp)
+	dir := filepath.Join(tmp, "codex-quota")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "ui_state.json")
+	if err := os.WriteFile(path, []byte(`{"last_apply_targets":[" codex ","omp","codex","",4]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := state.LastApplyTargets; len(got) != 2 || got[0] != "codex" || got[1] != "omp" {
+		t.Fatalf("targets = %v", got)
 	}
 }
 

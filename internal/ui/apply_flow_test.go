@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -364,7 +365,94 @@ func TestApplyFlow_RemembersConfirmedTargetsForSession(t *testing.T) {
 	}
 }
 
+func TestApplyFlow_LoadsPersistedTargetsSafely(t *testing.T) {
+	account := &config.Account{Key: "acc-1", AccountID: "acc-1", AccessToken: "tok", Source: config.SourceManaged, Writable: true}
+	m := InitialModelWithUIState(
+		[]*config.Account{account},
+		nil,
+		nil,
+		config.UIState{LastApplyTargets: []string{"omp", "unknown", "codex", "omp"}},
+	)
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 2 || got[0] != config.SourceCodex || got[1] != config.SourceOMP {
+		t.Fatalf("persisted targets = %v", got)
+	}
+	if got := m.applyTargetStrings(); !reflect.DeepEqual(got, []string{"codex", "omp"}) {
+		t.Fatalf("persisted targets were not normalized deterministically: %v", got)
+	}
+}
+
+func TestApplyFlow_PersistsConfirmedTargetsAcrossRestart(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	m := testModelForHotkeys(1)
+	m.lastConfirmedApplyTargets = map[config.Source]bool{config.SourceCodex: true}
+	if err := config.SaveUIState(m.uiStateSnapshot()); err != nil {
+		t.Fatal(err)
+	}
+	state, err := config.LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := InitialModelWithUIState(m.Accounts, nil, nil, state)
+	next.startApplyFlow()
+	if got := next.selectedApplyTargets(); len(got) != 1 || got[0] != config.SourceCodex {
+		t.Fatalf("restart did not restore Codex-only target: %v", got)
+	}
+	next.setApplyTargetsAll(true)
+	next.lastConfirmedApplyTargets = cloneApplyTargets(next.ApplyTargets)
+	if err := config.SaveUIState(next.uiStateSnapshot()); err != nil {
+		t.Fatal(err)
+	}
+	state, err = config.LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted := InitialModelWithUIState(m.Accounts, nil, nil, state)
+	restarted.startApplyFlow()
+	if got := restarted.selectedApplyTargets(); len(got) != 4 {
+		t.Fatalf("all-target preference did not replace saved selection: %v", got)
+	}
+}
+
+func TestApplyTargetUIStateSaveFailureIsNonDestructive(t *testing.T) {
+	tmp := t.TempDir()
+	blocked := filepath.Join(tmp, "blocked")
+	if err := os.WriteFile(blocked, []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CQ_CONFIG_HOME", blocked)
+	if err := config.SaveUIState(config.UIState{LastApplyTargets: []string{"codex"}}); err == nil {
+		t.Fatal("expected UI-state save failure")
+	}
+}
+
+func TestApplyFlow_ConfirmedTargetsPersistBeforeApplyResult(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+	m.ApplyTargets = map[config.Source]bool{config.SourceCodex: true}
+	updated, _ := m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	updated, cmd := m.handleApplyConfirm("enter")
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected apply command")
+	}
+	_ = cmd()
+	state, err := config.LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := state.LastApplyTargets; len(got) != 1 || got[0] != "codex" {
+		t.Fatalf("confirmed target was not persisted: %v", got)
+	}
+}
 func TestApplyFlow_KeyHandlingAndCancel(t *testing.T) {
+
 	m := testModelForHotkeys(1)
 	m.startApplyFlow()
 

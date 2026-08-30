@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/deLiseLINO/codex-quota/internal/api"
+	"github.com/deLiseLINO/codex-quota/internal/config"
 )
 
 func normalizeKey(key string) string {
@@ -257,8 +258,11 @@ func (m Model) handleApplyConfirm(keyStr string) (tea.Model, tea.Cmd) {
 		m.resetDeleteState()
 		m.ShowInfo = false
 		m.Notice = ""
+		state := m.uiStateSnapshot()
+		preferenceErr := config.SaveUIState(state)
+		applyCmd := ApplyToTargetsCmd(account, targets)
 		m.resetApplyState()
-		return m, ApplyToTargetsCmd(account, targets)
+		return m, ApplyToTargetsWithPreferenceCmd(applyCmd, preferenceErr)
 	}
 
 	return m, nil

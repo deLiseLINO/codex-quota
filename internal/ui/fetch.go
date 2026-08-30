@@ -173,6 +173,30 @@ func ApplyToTargetsCmd(account *config.Account, targets []config.Source) tea.Cmd
 	}
 }
 
+func ApplyToTargetsWithPreferenceCmd(applyCmd tea.Cmd, preferenceErr error) tea.Cmd {
+	if applyCmd == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		msg := applyCmd()
+		if preferenceErr == nil {
+			return msg
+		}
+		switch result := msg.(type) {
+		case AccountsMsg:
+			result.Notice = strings.TrimSpace(result.Notice + " (apply target preference was not saved)")
+			return result
+		case NoticeMsg:
+			result.Text = strings.TrimSpace(result.Text + " (apply target preference was not saved)")
+			return result
+		case ErrMsg:
+			result.Err = fmt.Errorf("%w; apply target preference was not saved: %v", result.Err, preferenceErr)
+			return result
+		}
+		return NoticeMsg{Text: fmt.Sprintf("apply target preference was not saved: %v", preferenceErr)}
+	}
+}
+
 func RestoreOMPAccountsCmd() tea.Cmd {
 	return func() tea.Msg {
 		count, path, err := config.RestoreManagedAccountsToOMP()

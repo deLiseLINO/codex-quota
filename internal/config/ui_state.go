@@ -13,6 +13,7 @@ type UIState struct {
 	AccountOrderKeys     []string          `json:"account_order_keys"`
 	ActiveAccountKey     string            `json:"active_account_key"`
 	PlanTypes            map[string]string `json:"plan_types,omitempty"`
+	LastApplyTargets     []string          `json:"last_apply_targets,omitempty"`
 }
 
 func LoadUIState() (UIState, error) {
@@ -82,6 +83,20 @@ func LoadUIState() (UIState, error) {
 		}
 		state.PlanTypes = planTypes
 	}
+	if targetsAny, ok := root["last_apply_targets"].([]any); ok {
+		targets := make([]string, 0, len(targetsAny))
+		seen := make(map[string]bool, len(targetsAny))
+		for _, raw := range targetsAny {
+			target, ok := raw.(string)
+			target = strings.TrimSpace(target)
+			if !ok || target == "" || seen[target] {
+				continue
+			}
+			seen[target] = true
+			targets = append(targets, target)
+		}
+		state.LastApplyTargets = targets
+	}
 
 	return state, nil
 }
@@ -101,11 +116,29 @@ func SaveUIState(state UIState) error {
 	if len(state.PlanTypes) > 0 {
 		root["plan_types"] = state.PlanTypes
 	}
+	if targets := normalizeLastApplyTargets(state.LastApplyTargets); len(targets) > 0 {
+		root["last_apply_targets"] = targets
+	}
 	if err := writeJSONMap(path, root); err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
 
 	return nil
+}
+
+func normalizeLastApplyTargets(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		seen[strings.TrimSpace(value)] = true
+	}
+	ordered := []string{"codex", "opencode", "pi", "omp"}
+	targets := make([]string, 0, len(ordered))
+	for _, target := range ordered {
+		if seen[target] {
+			targets = append(targets, target)
+		}
+	}
+	return targets
 }
 
 func uiStatePath() (string, error) {

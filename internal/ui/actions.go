@@ -332,6 +332,30 @@ func cloneApplyTargets(targets map[config.Source]bool) map[config.Source]bool {
 	return clone
 }
 
+func applyTargetsFromState(values []string) map[config.Source]bool {
+	targets := make(map[config.Source]bool, len(values))
+	for _, value := range values {
+		source := config.Source(value)
+		if source == config.SourceCodex || source == config.SourceOpenCode || source == config.SourcePi || source == config.SourceOMP {
+			targets[source] = true
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	return targets
+}
+
+func (m Model) applyTargetStrings() []string {
+	targets := make([]string, 0, len(m.lastConfirmedApplyTargets))
+	for _, source := range applyTargetsOrdered() {
+		if m.lastConfirmedApplyTargets[source] {
+			targets = append(targets, string(source))
+		}
+	}
+	return targets
+}
+
 func (m Model) selectedApplyTargets() []config.Source {
 	targets := make([]config.Source, 0, 2)
 	for _, source := range applyTargetsOrdered() {
