@@ -105,14 +105,14 @@ var (
 					Foreground(lipgloss.Color("240"))
 	SourcePiBadgeActiveStyle = lipgloss.NewStyle().
 					Bold(true).
-					Foreground(lipgloss.Color("76"))
+					Foreground(lipgloss.Color("45"))
 	SourcePiBadgeMutedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("70"))
+				Foreground(lipgloss.Color("73"))
 	SourceOMPBadgeActiveStyle = lipgloss.NewStyle().
 					Bold(true).
-					Foreground(lipgloss.Color("214"))
+					Foreground(lipgloss.Color("141"))
 	SourceOMPBadgeMutedStyle = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("172"))
+					Foreground(lipgloss.Color("97"))
 
 	SubscribedLabelActiveStyle = lipgloss.NewStyle().
 					Bold(true).
