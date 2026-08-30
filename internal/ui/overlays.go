@@ -160,7 +160,7 @@ func (m Model) renderApplyTargetModal() string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, InfoValueStyle.Render("[↑/↓] Move   [space] Toggle   [enter] Next   [esc] Cancel"))
+	lines = append(lines, InfoValueStyle.Render("[↑/↓] Move   [space] Toggle   [a] Select all   [enter] Next   [esc] Cancel"))
 
 	content := strings.Join(lines, "\n")
 	return InfoBoxStyle.Copy().Width(68).Render(content)
@@ -261,6 +261,7 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine("R", "Refresh all accounts"),
 		renderHelpLine("o", "Apply to apps (Codex/OpenCode/Pi/active OMP account)"),
 		renderHelpLine("Enter → p", "Restore CQ accounts to the OMP pool"),
+		renderHelpLine("a", "Select all Apply targets"),
 		renderHelpLine("n", "Add account"),
 		renderHelpLine("x", "Delete account"),
 		renderHelpLine("i", "Account info"),

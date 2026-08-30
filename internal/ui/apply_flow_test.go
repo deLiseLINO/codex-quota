@@ -203,6 +203,9 @@ func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
 	if !strings.Contains(outSelect, "OpenCode") {
 		t.Errorf("expected OpenCode in apply modal:\n%s", outSelect)
 	}
+	if !strings.Contains(outSelect, "[a] Select all") {
+		t.Errorf("expected select-all hint in apply modal:\n%s", outSelect)
+	}
 	if !strings.Contains(outSelect, "Pi agent") {
 		t.Errorf("expected Pi agent in apply modal:\n%s", outSelect)
 	}
@@ -301,6 +304,63 @@ func TestApplyFlow_DefaultSelectionRespectsExistingFiles(t *testing.T) {
 	m3.startApplyFlow()
 	if !m3.ApplyTargets[config.SourceOMP] {
 		t.Errorf("expected OMP true when file exists")
+	}
+}
+
+func TestApplyFlow_RemembersConfirmedTargetsForSession(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+	m.ApplyTargets = map[config.Source]bool{config.SourceCodex: true}
+	updated, _ := m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	updated, cmd := m.handleApplyConfirm("enter")
+	m = updated.(Model)
+	updated, _ = m.Update(ErrMsg{Err: assertErr("apply failed")})
+	m = updated.(Model)
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 1 || got[0] != config.SourceCodex {
+		t.Fatalf("failed apply should retain confirmed intent: %v", got)
+	}
+	if cmd == nil || len(m.lastConfirmedApplyTargets) != 1 || !m.lastConfirmedApplyTargets[config.SourceCodex] {
+		t.Fatal("expected Codex-only confirmation to be remembered")
+	}
+
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 1 || got[0] != config.SourceCodex {
+		t.Fatalf("reopened targets = %v, want Codex only", got)
+	}
+	m.ApplyTargets[config.SourceOpenCode] = true
+	if m.lastConfirmedApplyTargets[config.SourceOpenCode] {
+		t.Fatal("current apply map aliased remembered targets")
+	}
+	updated, _ = m.handleApplyTargetSelection("esc")
+	m = updated.(Model)
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 1 || got[0] != config.SourceCodex {
+		t.Fatalf("cancelled edits overwrote remembered targets: %v", got)
+	}
+
+	updated, _ = m.handleApplyTargetSelection("a")
+	m = updated.(Model)
+	if len(m.selectedApplyTargets()) != 4 {
+		t.Fatal("select all should leave all targets selected")
+	}
+	updated, _ = m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	updated, cmd = m.handleApplyConfirm("enter")
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected all-target apply command")
+	}
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 4 {
+		t.Fatalf("reconfirmed all targets were not remembered: %v", got)
+	}
+
+	fresh := testModelForHotkeys(1)
+	fresh.startApplyFlow()
+	if fresh.lastConfirmedApplyTargets != nil {
+		t.Fatal("new model should not remember session targets")
 	}
 }
 

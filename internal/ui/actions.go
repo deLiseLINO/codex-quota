@@ -269,11 +269,15 @@ func (m *Model) resetApplyState() {
 func (m *Model) startApplyFlow() {
 	m.resetApplyState()
 	m.ApplyTargetSelect = true
-	m.ApplyTargets = map[config.Source]bool{
-		config.SourceCodex:    true,
-		config.SourceOpenCode: true,
-		config.SourcePi:       config.HasExistingPiAuth(),
-		config.SourceOMP:      config.HasExistingOMPAuth(),
+	if len(m.lastConfirmedApplyTargets) > 0 {
+		m.ApplyTargets = cloneApplyTargets(m.lastConfirmedApplyTargets)
+	} else {
+		m.ApplyTargets = map[config.Source]bool{
+			config.SourceCodex:    true,
+			config.SourceOpenCode: true,
+			config.SourcePi:       config.HasExistingPiAuth(),
+			config.SourceOMP:      config.HasExistingOMPAuth(),
+		}
 	}
 	m.ApplyTargetCursor = 0
 }
@@ -318,6 +322,14 @@ func (m *Model) setApplyTargetsAll(selected bool) {
 	for _, source := range applyTargetsOrdered() {
 		m.ApplyTargets[source] = selected
 	}
+}
+
+func cloneApplyTargets(targets map[config.Source]bool) map[config.Source]bool {
+	clone := make(map[config.Source]bool, len(targets))
+	for source, selected := range targets {
+		clone[source] = selected
+	}
+	return clone
 }
 
 func (m Model) selectedApplyTargets() []config.Source {

@@ -246,15 +246,17 @@ func (m Model) handleApplyConfirm(keyStr string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		targets := m.selectedApplyTargets()
+		if len(targets) == 0 {
+			m.setApplyTargetsAll(true)
+			targets = m.selectedApplyTargets()
+		}
+		m.lastConfirmedApplyTargets = cloneApplyTargets(m.ApplyTargets)
 		m.Loading = true
 		m.Err = nil
 		m.resetDeleteState()
 		m.ShowInfo = false
 		m.Notice = ""
-		targets := m.selectedApplyTargets()
-		if len(targets) == 0 {
-			targets = applyTargetsOrdered()
-		}
 		m.resetApplyState()
 		return m, ApplyToTargetsCmd(account, targets)
 	}

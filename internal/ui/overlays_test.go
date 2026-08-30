@@ -88,6 +88,9 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	if !strings.Contains(out, "o          Apply to apps") {
 		t.Fatalf("expected apply action in help modal:\n%s", out)
 	}
+	if !strings.Contains(out, "a          Select all Apply targets") {
+		t.Fatalf("expected apply select-all guidance in help modal:\n%s", out)
+	}
 	if !strings.Contains(out, "v / c      Toggle view mode") {
 		t.Fatalf("expected view mode alias guidance in help modal:\n%s", out)
 	}
