@@ -22,11 +22,60 @@ func TestActiveSourceBadgesForAccount(t *testing.T) {
 	}
 
 	m := InitialModel([]*config.Account{account}, map[string][]string{}, map[string][]string{
-		"account:acc-1": []string{"codex", "opencode"},
+		"account:acc-1": []string{"codex", "opencode", "pi", "omp"},
 	}, false)
 
-	if got := m.activeSourceBadgesForAccount(account); got != "C•O" {
-		t.Fatalf("badges mismatch: got %q, want %q", got, "C•O")
+	if got := m.activeSourceBadgesForAccount(account); got != "C•O•P•M" {
+		t.Fatalf("badges mismatch: got %q, want %q", got, "C•O•P•M")
+	}
+}
+
+func TestActiveSourceBadgesForAccount_PiAndOMP(t *testing.T) {
+	account := &config.Account{
+		Key:       "acc-1",
+		Label:     "user@example.com",
+		Email:     "user@example.com",
+		AccountID: "acc-1",
+		Source:    config.SourceManaged,
+		Writable:  true,
+	}
+
+	m := InitialModel([]*config.Account{account}, map[string][]string{}, map[string][]string{
+		"account:acc-1": []string{"pi", "omp"},
+	}, false)
+
+	if got := m.activeSourceBadgesForAccount(account); got != "P•M" {
+		t.Fatalf("badges mismatch: got %q, want %q", got, "P•M")
+	}
+}
+func TestActiveSourceBadges_MultipleOMPAccountsBothRenderBadges(t *testing.T) {
+	acct1 := &config.Account{
+		Key:       "acc-1",
+		Label:     "user1@omp.sh",
+		Email:     "user1@omp.sh",
+		AccountID: "acc-1",
+		Source:    config.SourceManaged,
+		Writable:  true,
+	}
+	acct2 := &config.Account{
+		Key:       "acc-2",
+		Label:     "user2@omp.sh",
+		Email:     "user2@omp.sh",
+		AccountID: "acc-2",
+		Source:    config.SourceManaged,
+		Writable:  true,
+	}
+
+	m := InitialModel([]*config.Account{acct1, acct2}, map[string][]string{}, map[string][]string{
+		"account:acc-1": []string{"omp"},
+		"account:acc-2": []string{"omp"},
+	}, false)
+
+	if got := m.activeSourceBadgesForAccount(acct1); got != "M" {
+		t.Fatalf("acct1 badge mismatch: got %q, want %q", got, "M")
+	}
+	if got := m.activeSourceBadgesForAccount(acct2); got != "M" {
+		t.Fatalf("acct2 badge mismatch: got %q, want %q", got, "M")
 	}
 }
 

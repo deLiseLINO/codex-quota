@@ -13,6 +13,8 @@ func (m Model) activeSourceBadgesForAccount(account *config.Account) string {
 
 	hasCodex := false
 	hasOpenCode := false
+	hasPi := false
+	hasOMP := false
 	appendLabels := func(labels []string) {
 		for _, label := range labels {
 			source, ok := sourceFromLabel(label)
@@ -25,6 +27,12 @@ func (m Model) activeSourceBadgesForAccount(account *config.Account) string {
 			if source == config.SourceOpenCode {
 				hasOpenCode = true
 			}
+			if source == config.SourcePi {
+				hasPi = true
+			}
+			if source == config.SourceOMP {
+				hasOMP = true
+			}
 		}
 	}
 
@@ -32,20 +40,25 @@ func (m Model) activeSourceBadgesForAccount(account *config.Account) string {
 		appendLabels(m.ActiveSourcesByIdentity[key])
 	}
 
-	if !hasCodex && !hasOpenCode {
+	if !hasCodex && !hasOpenCode && !hasPi && !hasOMP {
 		return ""
 	}
 
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 4)
 	if hasCodex {
 		parts = append(parts, "C")
 	}
 	if hasOpenCode {
 		parts = append(parts, "O")
 	}
+	if hasPi {
+		parts = append(parts, "P")
+	}
+	if hasOMP {
+		parts = append(parts, "M")
+	}
 	return strings.Join(parts, "•")
 }
-
 func (m Model) hasSubscription(account *config.Account) bool {
 	if account == nil || account.Key == "" {
 		return false
@@ -61,11 +74,14 @@ func (m Model) renderActiveSourceBadges(account *config.Account, isRowActive boo
 
 	cStyle := SourceCodexBadgeMutedStyle
 	oStyle := SourceOpenCodeBadgeMutedStyle
+	pStyle := SourcePiBadgeMutedStyle
+	mStyle := SourceOMPBadgeMutedStyle
 	if isRowActive {
 		cStyle = SourceCodexBadgeActiveStyle
 		oStyle = SourceOpenCodeBadgeActiveStyle
+		pStyle = SourcePiBadgeActiveStyle
+		mStyle = SourceOMPBadgeActiveStyle
 	}
-
 	var b strings.Builder
 	b.WriteString(SourceBadgeBracketStyle.Render("["))
 	for _, r := range raw {
@@ -74,6 +90,10 @@ func (m Model) renderActiveSourceBadges(account *config.Account, isRowActive boo
 			b.WriteString(cStyle.Render("C"))
 		case 'O':
 			b.WriteString(oStyle.Render("O"))
+		case 'P':
+			b.WriteString(pStyle.Render("P"))
+		case 'M':
+			b.WriteString(mStyle.Render("M"))
 		case '•':
 			b.WriteString(SourceBadgeSeparatorStyle.Render("•"))
 		default:

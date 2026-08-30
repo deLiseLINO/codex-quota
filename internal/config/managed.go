@@ -1,6 +1,7 @@
 package config
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 type managedStore struct {
@@ -566,6 +569,300 @@ func DeleteCodexAuthAccount() error {
 	}
 
 	return writeJSONMap(path, root)
+}
+func ApplyAccountToPi(account *Account) (string, error) {
+	return applyAccountToPi(account, targetWriteApply)
+}
+
+func applyAccountToPi(account *Account, mode targetWriteMode) (string, error) {
+	if account == nil {
+		return "", fmt.Errorf("account is nil")
+	}
+	path := piAuthPath()
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("Pi auth path is unknown")
+	}
+
+	root, err := readJSONMap(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			root = make(map[string]any)
+		} else {
+			return "", fmt.Errorf("failed to read %s: %w", path, err)
+		}
+	}
+
+	codexObj := asMap(root["openai-codex"])
+	if codexObj == nil {
+		codexObj = make(map[string]any)
+		root["openai-codex"] = codexObj
+	}
+
+	accountToWrite := chooseTargetWriteAccount(account, buildPiAccount(codexObj, SourcePi, path, true), mode)
+	if accountToWrite == nil {
+		return "", nil
+	}
+
+	codexObj["type"] = "oauth"
+	codexObj["access"] = accountToWrite.AccessToken
+	if accountToWrite.RefreshToken != "" {
+		codexObj["refresh"] = accountToWrite.RefreshToken
+	}
+	if accountToWrite.AccountID != "" {
+		codexObj["accountId"] = accountToWrite.AccountID
+	}
+	if accountToWrite.Email != "" {
+		codexObj["email"] = accountToWrite.Email
+	}
+	if !accountToWrite.ExpiresAt.IsZero() {
+		codexObj["expires"] = accountToWrite.ExpiresAt.UnixMilli()
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", fmt.Errorf("failed to ensure directory for %s: %w", path, err)
+	}
+
+	if err := writeJSONMap(path, root); err != nil {
+		return "", fmt.Errorf("failed to write %s: %w", path, err)
+	}
+
+	return path, nil
+}
+
+func DeletePiAuthAccount(account *Account) error {
+	path := piAuthPath()
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+
+	root, err := readJSONMap(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	if _, ok := root["openai-codex"]; !ok {
+		return nil
+	}
+
+	delete(root, "openai-codex")
+	if err := writeJSONMap(path, root); err != nil {
+		return fmt.Errorf("failed to write %s: %w", path, err)
+	}
+	return nil
+}
+
+func HasExistingPiAuth() bool {
+	path := piAuthPath()
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func HasExistingOMPAuth() bool {
+	path := ompAgentDbPath()
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func ApplyAccountToOMP(account *Account) (string, error) {
+	return applyAccountToOMP(account, targetWriteApply)
+}
+
+func applyAccountToOMP(account *Account, mode targetWriteMode) (string, error) {
+	if account == nil {
+		return "", fmt.Errorf("account is nil")
+	}
+	path := ompAgentDbPath()
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("OMP agent.db path is unknown")
+	}
+
+	existingAccounts, err := loadOMPAccounts(path)
+	if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to load existing accounts from %s: %w", path, err)
+	}
+
+	var matchingExisting *Account
+	for _, existing := range existingAccounts {
+		if sameIdentity(account, existing) {
+			matchingExisting = existing
+			break
+		}
+	}
+
+	accountToWrite := chooseTargetWriteAccount(account, matchingExisting, mode)
+	if accountToWrite == nil {
+		return "", nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", fmt.Errorf("failed to ensure directory for %s: %w", path, err)
+	}
+
+	// Ensure file exists with restrictive 0600 permissions before opening via SQLite
+	if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600); err == nil {
+		_ = f.Close()
+		_ = os.Chmod(path, 0o600)
+	}
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return "", fmt.Errorf("failed to open sqlite database %s: %w", path, err)
+	}
+	defer db.Close()
+
+	_, _ = db.Exec("PRAGMA busy_timeout = 5000;")
+
+	// Canonical OMP SQLite schema matching @oh-my-pi/pi-ai/src/auth/sqlite-credential-store.ts (AUTH_SCHEMA_VERSION = 7).
+	_, err = db.Exec(`
+		PRAGMA journal_mode = WAL;
+		PRAGMA synchronous = NORMAL;
+		CREATE TABLE IF NOT EXISTS auth_schema_version (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			version INTEGER NOT NULL
+		);
+		INSERT OR IGNORE INTO auth_schema_version (id, version) VALUES (1, 7);
+		CREATE TABLE IF NOT EXISTS auth_credentials (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			provider TEXT NOT NULL,
+			credential_type TEXT NOT NULL,
+			data TEXT NOT NULL,
+			disabled_cause TEXT DEFAULT NULL,
+			identity_key TEXT DEFAULT NULL,
+			created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+			updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+		);
+		CREATE INDEX IF NOT EXISTS idx_auth_provider ON auth_credentials(provider);
+		CREATE INDEX IF NOT EXISTS idx_auth_provider_identity ON auth_credentials(provider, identity_key) WHERE identity_key IS NOT NULL;
+	`)
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize schema in %s: %w", path, err)
+	}
+
+	payload := map[string]any{
+		"type":         "oauth",
+		"access":       accountToWrite.AccessToken,
+		"refresh":      accountToWrite.RefreshToken,
+		"accountId":    accountToWrite.AccountID,
+		"email":        accountToWrite.Email,
+		"authorizedAt": time.Now().UnixMilli(),
+	}
+	if !accountToWrite.ExpiresAt.IsZero() {
+		payload["expires"] = accountToWrite.ExpiresAt.UnixMilli()
+	}
+
+	jsonBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal credential JSON: %w", err)
+	}
+
+	var identityKey string
+	if accID := strings.TrimSpace(accountToWrite.AccountID); accID != "" {
+		identityKey = "account:" + accID
+	}
+	if email := strings.TrimSpace(accountToWrite.Email); email != "" {
+		identityKey = "email:" + strings.ToLower(email)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	var existingRowID int64
+	if identityKey != "" && strings.TrimSpace(accountToWrite.AccountID) != "" {
+		_ = tx.QueryRow("SELECT id FROM auth_credentials WHERE provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.accountId') = ?) LIMIT 1", identityKey, accountToWrite.AccountID).Scan(&existingRowID)
+	} else if identityKey != "" {
+		_ = tx.QueryRow("SELECT id FROM auth_credentials WHERE provider = 'openai-codex' AND identity_key = ? LIMIT 1", identityKey).Scan(&existingRowID)
+	} else if strings.TrimSpace(accountToWrite.AccountID) != "" {
+		_ = tx.QueryRow("SELECT id FROM auth_credentials WHERE provider = 'openai-codex' AND json_extract(data, '$.accountId') = ? LIMIT 1", accountToWrite.AccountID).Scan(&existingRowID)
+	}
+
+	if existingRowID > 0 {
+		_, err = tx.Exec("UPDATE auth_credentials SET data = ?, identity_key = ?, updated_at = CAST(strftime('%s','now') AS INTEGER) WHERE id = ?", string(jsonBytes), identityKey, existingRowID)
+	} else {
+		_, err = tx.Exec("INSERT INTO auth_credentials (provider, credential_type, data, disabled_cause, identity_key) VALUES ('openai-codex', 'oauth', ?, NULL, ?)", string(jsonBytes), identityKey)
+	}
+
+	if err == nil {
+		err = tx.Commit()
+	} else {
+		_ = tx.Rollback()
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("failed to write credential row in %s: %w", path, err)
+	}
+
+	return path, nil
+}
+
+func DeleteOMPAuthAccount(account *Account) error {
+	if account == nil {
+		return nil
+	}
+
+	accountID := strings.TrimSpace(account.AccountID)
+	email := strings.TrimSpace(account.Email)
+	if accountID == "" && email == "" {
+		return nil
+	}
+
+	path := ompAgentDbPath()
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %w", path, err)
+	}
+	defer db.Close()
+
+	_, _ = db.Exec("PRAGMA busy_timeout = 5000;")
+
+	identityKey := ""
+	if accountID != "" {
+		identityKey = "account:" + accountID
+	}
+	if email != "" {
+		identityKey = "email:" + strings.ToLower(email)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction in %s: %w", path, err)
+	}
+
+	if identityKey != "" && accountID != "" && email != "" {
+		_, err = tx.Exec("DELETE FROM auth_credentials WHERE provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.accountId') = ? OR json_extract(data, '$.email') = ?)", identityKey, accountID, email)
+	} else if accountID != "" {
+		_, err = tx.Exec("DELETE FROM auth_credentials WHERE provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.accountId') = ?)", identityKey, accountID)
+	} else {
+		_, err = tx.Exec("DELETE FROM auth_credentials WHERE provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.email') = ?)", identityKey, email)
+	}
+
+	if err == nil {
+		err = tx.Commit()
+	} else {
+		_ = tx.Rollback()
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to delete account from %s: %w", path, err)
+	}
+	return nil
 }
 
 func deleteMapKey(values map[string]any, key string) bool {

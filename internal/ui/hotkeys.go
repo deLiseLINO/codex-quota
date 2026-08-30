@@ -203,13 +203,13 @@ func (m Model) handleApplyTargetSelection(keyStr string) (tea.Model, tea.Cmd) {
 	case " ":
 		m.toggleCurrentApplyTargetSelection()
 		return m, nil
-	case "1":
-		m.ApplyTargetCursor = 0
-		m.toggleCurrentApplyTargetSelection()
-		return m, nil
-	case "2":
-		m.ApplyTargetCursor = 1
-		m.toggleCurrentApplyTargetSelection()
+	case "1", "2", "3", "4":
+		idx := int(keyStr[0] - '1')
+		targets := applyTargetsOrdered()
+		if idx >= 0 && idx < len(targets) {
+			m.ApplyTargetCursor = idx
+			m.toggleCurrentApplyTargetSelection()
+		}
 		return m, nil
 	case "a":
 		m.setApplyTargetsAll(true)

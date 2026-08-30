@@ -213,6 +213,27 @@ func TestApplyHotkeyOpensApplyFlow(t *testing.T) {
 		t.Fatalf("did not expect action menu to open")
 	}
 }
+func TestStartApplyFlow_DefaultSelectionRespectsExisting(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+
+	// When Pi and OMP are not on disk, Codex and OpenCode are selected true, Pi and OMP are false
+	if !m.ApplyTargets[config.SourceCodex] {
+		t.Errorf("expected Codex default selected true")
+	}
+	if !m.ApplyTargets[config.SourceOpenCode] {
+		t.Errorf("expected OpenCode default selected true")
+	}
+	if m.ApplyTargets[config.SourcePi] {
+		t.Errorf("expected Pi default selected false when not existing on disk")
+	}
+	if m.ApplyTargets[config.SourceOMP] {
+		t.Errorf("expected OMP default selected false when not existing on disk")
+	}
+}
 
 func TestActionMenuApplyOpensApplyFlow(t *testing.T) {
 	m := testModelForHotkeys(1)

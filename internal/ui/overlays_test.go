@@ -85,7 +85,7 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	if !strings.Contains(out, "Refresh all accounts") {
 		t.Fatalf("expected refresh all guidance in help modal:\n%s", out)
 	}
-	if !strings.Contains(out, "o          Apply to Codex/OpenCode") {
+	if !strings.Contains(out, "o          Apply to apps") {
 		t.Fatalf("expected apply action in help modal:\n%s", out)
 	}
 	if !strings.Contains(out, "v / c      Toggle view mode") {
@@ -138,13 +138,13 @@ func TestRenderActionMenuModalListsPrimaryActions(t *testing.T) {
 	if !strings.Contains(out, "Current account") || !strings.Contains(out, "Global actions") {
 		t.Fatalf("expected grouped action menu sections:\n%s", out)
 	}
-	if !strings.Contains(out, "Apply to Codex/OpenCode") || !strings.Contains(out, "Delete account") {
+	if !strings.Contains(out, "Apply to apps") || !strings.Contains(out, "Delete account") {
 		t.Fatalf("expected account actions in menu:\n%s", out)
 	}
 	if !strings.Contains(out, "Refresh all") || !strings.Contains(out, "Switch view") || !strings.Contains(out, "Add account") {
 		t.Fatalf("expected global actions in menu:\n%s", out)
 	}
-	if !strings.Contains(out, "1. Apply to Codex/OpenCode") || !strings.Contains(out, "5. Refresh all") {
+	if !strings.Contains(out, "1. Apply to apps") || !strings.Contains(out, "5. Refresh all") {
 		t.Fatalf("expected sequential numbering across sections:\n%s", out)
 	}
 }
@@ -174,7 +174,7 @@ func TestRenderActionMenuModalKeepsShortcutColumnAlignedForLongLabels(t *testing
 	applyLine := ""
 	switchViewLine := ""
 	for _, line := range lines {
-		if strings.Contains(line, "Apply to Codex/OpenCode") {
+		if strings.Contains(line, "Apply to apps") {
 			applyLine = line
 		}
 		if strings.Contains(line, "Switch view") {

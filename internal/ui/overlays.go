@@ -145,8 +145,13 @@ func (m Model) renderApplyTargetModal() string {
 			mark = "x"
 		}
 		label := "Codex app/cli"
-		if target == config.SourceOpenCode {
+		switch target {
+		case config.SourceOpenCode:
 			label = "OpenCode"
+		case config.SourcePi:
+			label = "Pi agent"
+		case config.SourceOMP:
+			label = "Oh My Pi (pool/profile)"
 		}
 		lines = append(lines, InfoValueStyle.Render(fmt.Sprintf("%s [%d] [%s] %s", cursor, i+1, mark, label)))
 	}
@@ -162,7 +167,7 @@ func (m Model) renderApplyConfirmModal() string {
 	selected := m.selectedApplyTargets()
 	targetLabel := sourceListText(selected)
 	if len(selected) == 0 {
-		targetLabel = "codex, opencode"
+		targetLabel = sourceListText(applyTargetsOrdered())
 	}
 
 	return renderMessageModal(
@@ -241,7 +246,7 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine("Enter", "Open account menu"),
 		renderHelpLine("r", "Refresh active account"),
 		renderHelpLine("R", "Refresh all accounts"),
-		renderHelpLine("o", "Apply to Codex/OpenCode"),
+		renderHelpLine("o", "Apply to apps (Codex/OpenCode/Pi/OMP)"),
 		renderHelpLine("n", "Add account"),
 		renderHelpLine("x", "Delete account"),
 		renderHelpLine("i", "Account info"),

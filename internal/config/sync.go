@@ -120,6 +120,12 @@ func SyncAccountEverywhere(account *Account) error {
 	if _, err := applyAccountToOpenCode(fresh, targetWriteRefresh); err != nil {
 		return err
 	}
+	if _, err := applyAccountToPi(fresh, targetWriteRefresh); err != nil {
+		return err
+	}
+	if _, err := applyAccountToOMP(fresh, targetWriteRefresh); err != nil {
+		return err
+	}
 	return nil
 }
 

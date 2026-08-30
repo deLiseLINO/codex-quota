@@ -69,6 +69,82 @@ func codexAuthPath() string {
 
 	return filepath.Join(home, ".codex", "auth.json")
 }
+func piAuthPath() string {
+	if path := cleanPath(os.Getenv("CQ_PI_AUTH_PATH")); path != "" {
+		return path
+	}
+
+	if dir := cleanPath(os.Getenv("PI_CODING_AGENT_DIR")); dir != "" {
+		return filepath.Join(dir, "auth.json")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+
+	return filepath.Join(home, ".pi", "agent", "auth.json")
+}
+
+func piAuthPaths() []string {
+	path := piAuthPath()
+	if path == "" {
+		return nil
+	}
+	return []string{path}
+}
+
+func ompAgentDbPath() string {
+	if path := cleanPath(os.Getenv("CQ_OMP_DB_PATH")); path != "" {
+		return path
+	}
+
+	if dir := cleanPath(os.Getenv("PI_CODING_AGENT_DIR")); dir != "" {
+		return filepath.Join(dir, "agent.db")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+
+	profile := strings.TrimSpace(os.Getenv("OMP_PROFILE"))
+	if profile == "" {
+		profile = strings.TrimSpace(os.Getenv("PI_PROFILE"))
+	}
+
+	configDir := ".omp"
+	if customDir := strings.TrimSpace(os.Getenv("PI_CONFIG_DIR")); customDir != "" {
+		configDir = customDir
+	}
+
+	if profile != "" && profile != "default" {
+		if xdgData := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); xdgData != "" {
+			xdgProfilePath := filepath.Join(xdgData, "omp", "profiles", profile, "agent", "agent.db")
+			if _, err := os.Stat(xdgProfilePath); err == nil {
+				return xdgProfilePath
+			}
+		}
+		return filepath.Join(home, configDir, "profiles", profile, "agent", "agent.db")
+	}
+
+	if xdgData := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); xdgData != "" {
+		xdgDefaultPath := filepath.Join(xdgData, "omp", "agent", "agent.db")
+		if _, err := os.Stat(xdgDefaultPath); err == nil {
+			return xdgDefaultPath
+		}
+	}
+
+	return filepath.Join(home, configDir, "agent", "agent.db")
+}
+
+func ompAgentDbPaths() []string {
+	path := ompAgentDbPath()
+	if path == "" {
+		return nil
+	}
+	return []string{path}
+}
 
 func firstExistingPath(paths []string) string {
 	for _, path := range paths {
