@@ -299,9 +299,9 @@ func (m *Model) moveApplyTargetCursor(delta int) {
 		m.ApplyTargetCursor = 0
 		return
 	}
-	m.ApplyTargetCursor = (m.ApplyTargetCursor + delta + len(targets)) % len(targets)
+	n := len(targets)
+	m.ApplyTargetCursor = ((m.ApplyTargetCursor+delta)%n + n) % n
 }
-
 func (m *Model) setApplyTargetsAll(selected bool) {
 	if m.ApplyTargets == nil {
 		m.ApplyTargets = map[config.Source]bool{}

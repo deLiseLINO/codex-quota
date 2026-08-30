@@ -46,13 +46,33 @@ func TestApplyFlow_CursorMovementAndClamping(t *testing.T) {
 	if m.ApplyTargetCursor != 3 {
 		t.Fatalf("expected cursor wrap to 3, got %d", m.ApplyTargetCursor)
 	}
+
+	// Move with large delta (modulo behavior)
+	m.moveApplyTargetCursor(10) // 3 + 10 = 13 % 4 = 1
+	if m.ApplyTargetCursor != 1 {
+		t.Fatalf("expected cursor 1 after delta 10, got %d", m.ApplyTargetCursor)
+	}
+	m.moveApplyTargetCursor(-9) // 1 - 9 = -8 % 4 = 0
+	if m.ApplyTargetCursor != 0 {
+		t.Fatalf("expected cursor 0 after delta -9, got %d", m.ApplyTargetCursor)
+	}
 }
 
 func TestApplyFlow_ToggleAndMinOneInvariant(t *testing.T) {
 	m := testModelForHotkeys(1)
 	m.startApplyFlow()
 
-	// Initially Codex and OpenCode are selected
+	// 1. Unsupported source is a safe no-op
+	m.toggleApplyTargetSelection("unsupported")
+
+	// 2. Nil map initializes
+	m.ApplyTargets = nil
+	m.toggleApplyTargetSelection(config.SourcePi)
+	if !m.ApplyTargets[config.SourcePi] {
+		t.Errorf("expected Pi initialized to true from nil map")
+	}
+
+	// Set initial state
 	m.ApplyTargets = map[config.Source]bool{
 		config.SourceCodex:    true,
 		config.SourceOpenCode: true,
@@ -88,10 +108,28 @@ func TestApplyFlow_ToggleAndMinOneInvariant(t *testing.T) {
 		t.Errorf("min-one invariant violated: last remaining target was toggled off!")
 	}
 
-	// Select all via 'a'
+	// Out-of-bounds cursor clamps to 0
+	m.ApplyTargetCursor = -5
+	m.toggleCurrentApplyTargetSelection()
+	if m.ApplyTargetCursor != 0 {
+		t.Errorf("expected cursor clamped to 0 from -5, got %d", m.ApplyTargetCursor)
+	}
+
+	m.ApplyTargetCursor = 100
+	m.toggleCurrentApplyTargetSelection()
+	if m.ApplyTargetCursor != 0 {
+		t.Errorf("expected cursor clamped to 0 from 100, got %d", m.ApplyTargetCursor)
+	}
+
+	// setApplyTargetsAll from nil
+	m.ApplyTargets = nil
 	m.setApplyTargetsAll(true)
 	if len(m.selectedApplyTargets()) != 4 {
 		t.Errorf("expected all 4 targets selected after setApplyTargetsAll(true)")
+	}
+	m.setApplyTargetsAll(false)
+	if len(m.selectedApplyTargets()) != 0 {
+		t.Errorf("expected 0 targets selected after setApplyTargetsAll(false)")
 	}
 }
 
@@ -107,11 +145,20 @@ func TestApplyFlow_NumberKeyShortcuts(t *testing.T) {
 		config.SourceOMP:      false,
 	}
 
-	// Press '2' to toggle OpenCode
-	updated, _ := m.handleApplyTargetSelection("2")
+	// Press '1' to toggle Codex off/on when multiple selected
+	m.ApplyTargets[config.SourceOpenCode] = true
+	updated, _ := m.handleApplyTargetSelection("1")
 	m = updated.(Model)
+	if m.ApplyTargets[config.SourceCodex] {
+		t.Errorf("pressing '1' should toggle Codex to false")
+	}
+
+	// Press '2' to toggle OpenCode
+	updated, _ = m.handleApplyTargetSelection("2")
+	m = updated.(Model)
+	// Min-one prevents toggling off last remaining
 	if !m.ApplyTargets[config.SourceOpenCode] {
-		t.Errorf("pressing '2' should toggle OpenCode to true")
+		t.Errorf("min-one invariant should keep OpenCode true")
 	}
 
 	// Press '3' to toggle Pi
@@ -127,6 +174,14 @@ func TestApplyFlow_NumberKeyShortcuts(t *testing.T) {
 	if !m.ApplyTargets[config.SourceOMP] {
 		t.Errorf("pressing '4' should toggle OMP to true")
 	}
+
+	// Press invalid numeric keys (e.g. '5', '9')
+	updated, _ = m.handleApplyTargetSelection("5")
+	m = updated.(Model)
+	updated, _ = m.handleApplyTargetSelection("9")
+	m = updated.(Model)
+	updated, _ = m.handleApplyTargetSelection("unrecognized")
+	m = updated.(Model)
 }
 
 func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
@@ -156,7 +211,7 @@ func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
 		t.Fatalf("expected transition to ApplyConfirm modal")
 	}
 
-	// 3. Confirm Modal rendering
+	// 3. Confirm Modal rendering with explicit selections
 	outConfirm := ansi.Strip(m.renderApplyConfirmModal())
 	if !strings.Contains(outConfirm, "Apply this account to:") {
 		t.Errorf("expected confirm prompt in modal:\n%s", outConfirm)
@@ -165,7 +220,15 @@ func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
 		t.Errorf("expected enter confirmation in modal:\n%s", outConfirm)
 	}
 
-	// 4. Press enter to confirm -> executes ApplyToTargetsCmd and closes modal
+	// 4. Confirm Modal rendering with empty selections (fallback)
+	mEmpty := m
+	mEmpty.ApplyTargets = map[config.Source]bool{}
+	outFallback := ansi.Strip(mEmpty.renderApplyConfirmModal())
+	if !strings.Contains(outFallback, "codex, opencode, pi, omp") {
+		t.Errorf("expected fallback labels in confirm modal with empty selections:\n%s", outFallback)
+	}
+
+	// 5. Press enter to confirm -> executes ApplyToTargetsCmd and closes modal
 	updated, cmd := m.handleApplyConfirm("enter")
 	m = updated.(Model)
 	if m.ApplyConfirm || m.ApplyTargetSelect {
@@ -173,6 +236,16 @@ func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Errorf("expected ApplyToTargetsCmd command returned on confirm")
+	}
+
+	// 6. Confirm when ApplyTargets is empty falls back to all targets
+	mFallbackConfirm := testModelForHotkeys(1)
+	mFallbackConfirm.startApplyFlow()
+	mFallbackConfirm.ApplyTargets = nil
+	mFallbackConfirm.ApplyConfirm = true
+	updated, cmd = mFallbackConfirm.handleApplyConfirm("enter")
+	if cmd == nil {
+		t.Errorf("expected ApplyToTargetsCmd command returned with fallback targets")
 	}
 }
 
@@ -211,6 +284,7 @@ func TestApplyFlow_DefaultSelectionRespectsExistingFiles(t *testing.T) {
 		t.Errorf("expected OMP true when file exists")
 	}
 }
+
 func TestApplyFlow_KeyHandlingAndCancel(t *testing.T) {
 	m := testModelForHotkeys(1)
 	m.startApplyFlow()
@@ -248,14 +322,41 @@ func TestApplyFlow_KeyHandlingAndCancel(t *testing.T) {
 		t.Errorf("space should toggle selection")
 	}
 
-	// 3. Esc cancels apply flow
+	// 3. 'a' toggles all targets
+	updated, _ = m.handleApplyTargetSelection("a")
+	m = updated.(Model)
+	if len(m.selectedApplyTargets()) != 4 {
+		t.Errorf("expected all 4 selected on 'a'")
+	}
+
+	// 4. Enter with 0 selected selects all and advances to confirm
+	m.ApplyTargets = map[config.Source]bool{}
+	updated, _ = m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	if !m.ApplyConfirm || len(m.selectedApplyTargets()) != 4 {
+		t.Errorf("expected all selected and advanced to confirm")
+	}
+
+	// 5. Esc cancels apply flow
+	m.startApplyFlow()
 	updated, _ = m.handleApplyTargetSelection("esc")
 	m = updated.(Model)
 	if m.ApplyTargetSelect || m.ApplyConfirm {
 		t.Errorf("esc should close apply modals")
 	}
 
-	// 4. Confirm modal esc cancels
+	// 6. 'q' and 'ctrl+c' quit from selection modal
+	m.startApplyFlow()
+	_, cmdQ := m.handleApplyTargetSelection("q")
+	if cmdQ == nil {
+		t.Errorf("expected quit command from 'q'")
+	}
+	_, cmdCtrlC := m.handleApplyTargetSelection("ctrl+c")
+	if cmdCtrlC == nil {
+		t.Errorf("expected quit command from 'ctrl+c'")
+	}
+
+	// 7. Confirm modal esc cancels
 	m.startApplyFlow()
 	updated, _ = m.handleApplyTargetSelection("enter")
 	m = updated.(Model)
@@ -268,7 +369,19 @@ func TestApplyFlow_KeyHandlingAndCancel(t *testing.T) {
 		t.Errorf("esc on confirm modal should close it")
 	}
 
-	// 5. Confirm with nil account
+	// 8. Confirm modal 'q' and 'ctrl+c' quit
+	m.startApplyFlow()
+	m.ApplyConfirm = true
+	_, cmdConfirmQ := m.handleApplyConfirm("q")
+	if cmdConfirmQ == nil {
+		t.Errorf("expected quit command from confirm 'q'")
+	}
+	_, cmdConfirmCtrlC := m.handleApplyConfirm("ctrl+c")
+	if cmdConfirmCtrlC == nil {
+		t.Errorf("expected quit command from confirm 'ctrl+c'")
+	}
+
+	// 9. Confirm with nil account
 	mEmpty := testModelForHotkeys(0)
 	mEmpty.startApplyFlow()
 	mEmpty.ApplyConfirm = true
@@ -278,7 +391,7 @@ func TestApplyFlow_KeyHandlingAndCancel(t *testing.T) {
 		t.Errorf("confirm with nil account should reset without command")
 	}
 
-	// 6. beginApplyFlow with nil active account
+	// 10. beginApplyFlow with nil active account
 	mNil := testModelForHotkeys(0)
 	updated, cmd = mNil.beginApplyFlow()
 	if cmd != nil {
@@ -403,5 +516,49 @@ func TestApplyToTargetsCmd_Execution(t *testing.T) {
 		t.Errorf("expected ErrMsg for empty targets, got: %T", msgEmpty)
 	} else if !strings.Contains(errMsg.Err.Error(), "no apply target selected") {
 		t.Errorf("expected 'no apply target selected' error, got: %v", errMsg.Err)
+	}
+}
+
+func TestBadges_EdgeCasesAndEmptySources(t *testing.T) {
+	// 1. nil account returns empty
+	m := testModelForHotkeys(1)
+	if got := m.activeSourceBadgesForAccount(nil); got != "" {
+		t.Errorf("expected empty badges for nil account, got %q", got)
+	}
+
+	// 2. Empty ActiveSourcesByIdentity returns empty
+	m.ActiveSourcesByIdentity = nil
+	acct := &config.Account{Key: "acc-1", AccountID: "acc-1"}
+	if got := m.activeSourceBadgesForAccount(acct); got != "" {
+		t.Errorf("expected empty badges when ActiveSourcesByIdentity is nil, got %q", got)
+	}
+
+	// 3. Account with no active sources returns empty
+	m.ActiveSourcesByIdentity = map[string][]string{
+		"account:acc-other": {"codex"},
+	}
+	if got := m.activeSourceBadgesForAccount(acct); got != "" {
+		t.Errorf("expected empty badges when account not active in any source, got %q", got)
+	}
+
+	// 4. renderActiveSourceBadges with empty string returns empty
+	if got := m.renderActiveSourceBadges(acct, true); got != "" {
+		t.Errorf("expected empty rendered badges when no sources active, got %q", got)
+	}
+
+	// 5. renderActiveSourceBadges with inactive row style
+	m.ActiveSourcesByIdentity = map[string][]string{
+		"account:acc-1": {"codex", "opencode", "pi", "omp"},
+	}
+	outActive := m.renderActiveSourceBadges(acct, true)
+	outMuted := m.renderActiveSourceBadges(acct, false)
+	if outActive == "" || outMuted == "" {
+		t.Errorf("expected rendered badges for all 4 sources")
+	}
+	if !strings.Contains(outActive, "C") || !strings.Contains(outActive, "O") || !strings.Contains(outActive, "P") || !strings.Contains(outActive, "M") {
+		t.Errorf("expected all 4 letters in rendered badges, got: %s", outActive)
+	}
+	if !strings.Contains(outMuted, "C") || !strings.Contains(outMuted, "O") || !strings.Contains(outMuted, "P") || !strings.Contains(outMuted, "M") {
+		t.Errorf("expected all 4 letters in muted rendered badges, got: %s", outMuted)
 	}
 }
