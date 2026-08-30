@@ -9,7 +9,7 @@ A TUI for switching between Codex accounts and monitoring quota usage, written i
 ## Features
 
 - Fast account switching across many accounts
-- Multi-target apply: set the active credential for Codex, OpenCode, Pi agent, and OMP
+- Multi-target apply: set the active credential for installed Codex, OpenCode, Pi, and OMP harnesses
 - Accounts loaded from CQ storage plus the external Codex, OpenCode, Pi (`~/.pi/agent/auth.json`), and active-profile OMP (`~/.omp/agent/agent.db`) stores
 - OAuth authentication via browser
 - Configurable auto-refresh: the active account refreshes on a short interval, the rest on a longer background interval
@@ -54,7 +54,7 @@ Typical flow:
 1. Press `n` to add/import account via OAuth.
 2. Move between accounts with arrows.
 3. Press `Enter` to open the actions menu for the active account and app-level actions.
-4. Press `o` to apply the active account to selected apps (Codex/OpenCode/Pi/OMP).
+4. Press `o` to apply the active account to selected installed apps.
 5. Use `r`/`R` to refresh quota and `?` for grouped keyboard help.
 
 > **External OMP modes:** Applying an account to OMP switches its external credential store to **exclusive mode**: exactly that one OpenAI Codex credential remains. CQ's managed copies are not deleted.
@@ -75,7 +75,7 @@ Typical flow:
 Additional shortcuts:
 
 - `h` `j` `k` `l` — Vim-style navigation
-- `o` — apply active account to targets (Codex, OpenCode, Pi, OMP)
+- `o` — apply active account to installed targets
 - `i` — toggle additional info
 - `n` — add account (OAuth)
 - `x` — delete active account

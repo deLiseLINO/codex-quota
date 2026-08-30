@@ -85,8 +85,8 @@ func TestRenderHelpModalShowsGroupedSections(t *testing.T) {
 	if !strings.Contains(out, "Refresh all accounts") {
 		t.Fatalf("expected refresh all guidance in help modal:\n%s", out)
 	}
-	if !strings.Contains(out, "o          Apply to apps") {
-		t.Fatalf("expected apply action in help modal:\n%s", out)
+	if !strings.Contains(out, "o          Apply to installed apps") {
+		t.Fatalf("expected installed-app apply action in help modal:\n%s", out)
 	}
 	if strings.Contains(out, "Select all") {
 		t.Fatalf("did not expect apply-only select-all hotkey in global help:\n%s", out)

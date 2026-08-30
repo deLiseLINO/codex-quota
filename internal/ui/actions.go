@@ -228,10 +228,14 @@ func (m Model) beginApplyFlow() (tea.Model, tea.Cmd) {
 	m.resetHelpState()
 	m.resetActionMenuState()
 	m.resetDeleteState()
-	m.startApplyFlow()
 	m.ShowInfo = false
-	m.Notice = ""
 	m.Err = nil
+	m.applyTargetOptions = config.InstalledApplyTargets()
+	if !m.startApplyFlow() {
+		m.Notice = "No supported agent harnesses found in PATH"
+		return m, nil
+	}
+	m.Notice = ""
 	return m, nil
 }
 
@@ -266,24 +270,36 @@ func (m *Model) resetApplyState() {
 	m.ApplyTargetCursor = 0
 }
 
-func (m *Model) startApplyFlow() {
+func (m *Model) startApplyFlow() bool {
 	m.resetApplyState()
+	targets := m.applyTargetsOrdered()
+	if len(targets) == 0 {
+		return false
+	}
 	m.ApplyTargetSelect = true
+	m.ApplyTargets = make(map[config.Source]bool, len(targets))
 	if len(m.lastConfirmedApplyTargets) > 0 {
-		m.ApplyTargets = cloneApplyTargets(m.lastConfirmedApplyTargets)
+		for _, target := range targets {
+			m.ApplyTargets[target] = m.lastConfirmedApplyTargets[target]
+		}
 	} else {
-		m.ApplyTargets = map[config.Source]bool{
-			config.SourceCodex:    true,
-			config.SourceOpenCode: true,
-			config.SourcePi:       config.HasExistingPiAuth(),
-			config.SourceOMP:      config.HasExistingOMPAuth(),
+		for _, target := range targets {
+			m.ApplyTargets[target] = true
 		}
 	}
 	m.ApplyTargetCursor = 0
+	return true
 }
 
 func (m *Model) toggleApplyTargetSelection(source config.Source) {
-	if source != config.SourceCodex && source != config.SourceOpenCode && source != config.SourcePi && source != config.SourceOMP {
+	available := false
+	for _, target := range m.applyTargetsOrdered() {
+		if source == target {
+			available = true
+			break
+		}
+	}
+	if !available {
 		return
 	}
 	if m.ApplyTargets == nil {
@@ -296,7 +312,7 @@ func (m *Model) toggleApplyTargetSelection(source config.Source) {
 }
 
 func (m *Model) toggleCurrentApplyTargetSelection() {
-	targets := applyTargetsOrdered()
+	targets := m.applyTargetsOrdered()
 	if len(targets) == 0 {
 		return
 	}
@@ -307,7 +323,7 @@ func (m *Model) toggleCurrentApplyTargetSelection() {
 }
 
 func (m *Model) moveApplyTargetCursor(delta int) {
-	targets := applyTargetsOrdered()
+	targets := m.applyTargetsOrdered()
 	if len(targets) == 0 {
 		m.ApplyTargetCursor = 0
 		return
@@ -319,7 +335,7 @@ func (m *Model) setApplyTargetsAll(selected bool) {
 	if m.ApplyTargets == nil {
 		m.ApplyTargets = map[config.Source]bool{}
 	}
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range m.applyTargetsOrdered() {
 		m.ApplyTargets[source] = selected
 	}
 }
@@ -332,11 +348,14 @@ func cloneApplyTargets(targets map[config.Source]bool) map[config.Source]bool {
 	return clone
 }
 
-func applyTargetsFromState(values []string) map[config.Source]bool {
-	targets := make(map[config.Source]bool, len(values))
+func applyTargetsFromState(values []string, available []config.Source) map[config.Source]bool {
+	requested := make(map[config.Source]bool, len(values))
 	for _, value := range values {
-		source := config.Source(value)
-		if source == config.SourceCodex || source == config.SourceOpenCode || source == config.SourcePi || source == config.SourceOMP {
+		requested[config.Source(value)] = true
+	}
+	targets := make(map[config.Source]bool, len(available))
+	for _, source := range available {
+		if requested[source] {
 			targets[source] = true
 		}
 	}
@@ -348,7 +367,7 @@ func applyTargetsFromState(values []string) map[config.Source]bool {
 
 func (m Model) applyTargetStrings() []string {
 	targets := make([]string, 0, len(m.lastConfirmedApplyTargets))
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range m.applyTargetsOrdered() {
 		if m.lastConfirmedApplyTargets[source] {
 			targets = append(targets, string(source))
 		}
@@ -358,7 +377,7 @@ func (m Model) applyTargetStrings() []string {
 
 func (m Model) selectedApplyTargets() []config.Source {
 	targets := make([]config.Source, 0, 2)
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range m.applyTargetsOrdered() {
 		if m.ApplyTargets != nil && m.ApplyTargets[source] {
 			targets = append(targets, source)
 		}
@@ -368,7 +387,7 @@ func (m Model) selectedApplyTargets() []config.Source {
 
 func (m Model) selectedApplyTargetCount() int {
 	count := 0
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range m.applyTargetsOrdered() {
 		if m.ApplyTargets != nil && m.ApplyTargets[source] {
 			count++
 		}
@@ -376,8 +395,8 @@ func (m Model) selectedApplyTargetCount() int {
 	return count
 }
 
-func applyTargetsOrdered() []config.Source {
-	return []config.Source{config.SourceCodex, config.SourceOpenCode, config.SourcePi, config.SourceOMP}
+func (m Model) applyTargetsOrdered() []config.Source {
+	return append([]config.Source(nil), m.applyTargetOptions...)
 }
 
 func dedupeApplyTargets(targets []config.Source) []config.Source {
@@ -390,7 +409,7 @@ func dedupeApplyTargets(targets []config.Source) []config.Source {
 	}
 
 	output := make([]config.Source, 0, len(seen))
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range config.SupportedApplyTargets() {
 		if seen[source] {
 			output = append(output, source)
 		}
@@ -411,7 +430,7 @@ func formatTargetErrors(errorsByTarget map[config.Source]error) string {
 		return ""
 	}
 	parts := make([]string, 0, len(errorsByTarget))
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range config.SupportedApplyTargets() {
 		err, ok := errorsByTarget[source]
 		if !ok || err == nil {
 			continue

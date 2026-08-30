@@ -126,11 +126,11 @@ func normalizeLastApplyTargets(values []string) []string {
 	for _, value := range values {
 		seen[strings.TrimSpace(value)] = true
 	}
-	ordered := []string{"codex", "opencode", "pi", "omp"}
-	targets := make([]string, 0, len(ordered))
-	for _, target := range ordered {
-		if seen[target] {
-			targets = append(targets, target)
+	installed := InstalledApplyTargets()
+	targets := make([]string, 0, len(installed))
+	for _, target := range installed {
+		if seen[string(target)] {
+			targets = append(targets, string(target))
 		}
 	}
 	return targets

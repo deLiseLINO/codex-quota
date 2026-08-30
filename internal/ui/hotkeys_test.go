@@ -201,6 +201,7 @@ func TestMouseClickOnAddAccountLoginURLTriggersOpen(t *testing.T) {
 }
 
 func TestApplyHotkeyOpensApplyFlow(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex")
 	m := testModelForHotkeys(1)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
@@ -215,6 +216,7 @@ func TestApplyHotkeyOpensApplyFlow(t *testing.T) {
 }
 
 func TestActionMenuApplyOpensApplyFlow(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex")
 	m := testModelForHotkeys(1)
 	m.ActionMenuVisible = true
 	m.ActionMenuCursor = 0
@@ -534,6 +536,7 @@ func testModelForHotkeys(count int) Model {
 		})
 	}
 	m := InitialModel(accounts, map[string][]string{}, map[string][]string{}, false)
+	m.applyTargetOptions = config.SupportedApplyTargets()
 	m.Loading = false
 	return m
 }

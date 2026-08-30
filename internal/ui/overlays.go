@@ -132,7 +132,7 @@ func (m Model) renderDeleteConfirmModal() string {
 }
 
 func (m Model) renderApplyTargetModal() string {
-	targets := applyTargetsOrdered()
+	targets := m.applyTargetsOrdered()
 
 	lines := []string{
 		WarningStyle.Render("Apply account"),
@@ -170,7 +170,7 @@ func (m Model) renderApplyTargetModal() string {
 func (m Model) renderApplyConfirmModal() string {
 	selected := m.selectedApplyTargets()
 	if len(selected) == 0 {
-		selected = applyTargetsOrdered()
+		selected = m.applyTargetsOrdered()
 	}
 
 	message := fmt.Sprintf("Apply this account to: %s?\n[enter] Confirm   [esc] Cancel", sourceListText(selected))
@@ -260,7 +260,7 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine("Enter", "Open account menu"),
 		renderHelpLine("r", "Refresh active account"),
 		renderHelpLine("R", "Refresh all accounts"),
-		renderHelpLine("o", "Apply to apps (Codex/OpenCode/Pi/active OMP account)"),
+		renderHelpLine("o", "Apply to installed apps"),
 		renderHelpLine("Enter → p", "Restore CQ accounts to the OMP pool"),
 		renderHelpLine("n", "Add account"),
 		renderHelpLine("x", "Delete account"),

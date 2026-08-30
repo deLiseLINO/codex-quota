@@ -277,39 +277,102 @@ func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
 	}
 }
 
-func TestApplyFlow_DefaultSelectionRespectsExistingFiles(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "pi_auth.json"))
-	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "omp_agent.db"))
+func TestApplyFlow_DefaultSelectionUsesInstalledExecutables(t *testing.T) {
+	root := isolateApplyTestEnvironment(t, "opencode", "omp")
+	if err := os.WriteFile(filepath.Join(root, "pi", "auth.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "omp"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "omp", "agent.db"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := testModelForHotkeys(1)
+	m.applyTargetOptions = config.InstalledApplyTargets()
+	if !m.startApplyFlow() {
+		t.Fatal("expected installed targets")
+	}
+	got := m.selectedApplyTargets()
+	want := []config.Source{config.SourceOpenCode, config.SourceOMP}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("default targets = %v, want %v", got, want)
+	}
+	if _, exists := m.ApplyTargets[config.SourcePi]; exists {
+		t.Fatal("Pi auth file must not make an uninstalled Pi target available")
+	}
+}
 
-	// Case 1: When neither exists, Pi and OMP are false
-	m1 := testModelForHotkeys(1)
-	m1.startApplyFlow()
-	if m1.ApplyTargets[config.SourcePi] {
-		t.Errorf("expected Pi false when file missing")
+func TestApplyFlow_SubsetControlsModalHotkeysAndSelection(t *testing.T) {
+	isolateApplyTestEnvironment(t, "opencode", "omp")
+	m := testModelForHotkeys(1)
+	m.applyTargetOptions = config.InstalledApplyTargets()
+	m.startApplyFlow()
+	out := ansi.Strip(m.renderApplyTargetModal())
+	if strings.Contains(out, "Codex app/cli") || strings.Contains(out, "Pi agent") {
+		t.Fatalf("modal contains unavailable targets:\n%s", out)
 	}
-	if m1.ApplyTargets[config.SourceOMP] {
-		t.Errorf("expected OMP false when file missing")
+	if !strings.Contains(out, "OpenCode") || !strings.Contains(out, "Oh My Pi") {
+		t.Fatalf("modal omits installed targets:\n%s", out)
 	}
+	updated, _ := m.handleApplyTargetSelection("2")
+	m = updated.(Model)
+	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceOpenCode}) {
+		t.Fatalf("key 2 selected targets = %v", got)
+	}
+	updated, _ = m.handleApplyTargetSelection("3")
+	m = updated.(Model)
+	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceOpenCode}) {
+		t.Fatalf("hidden numeric target changed selection: %v", got)
+	}
+	m.toggleApplyTargetSelection(config.SourceCodex)
+	if _, exists := m.ApplyTargets[config.SourceCodex]; exists {
+		t.Fatal("hidden Codex target was inserted by toggle")
+	}
+	m.setApplyTargetsAll(true)
+	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceOpenCode, config.SourceOMP}) {
+		t.Fatalf("select all = %v", got)
+	}
+	m.ApplyTargetCursor = 0
+	m.moveApplyTargetCursor(1)
+	if m.ApplyTargetCursor != 1 {
+		t.Fatalf("cursor = %d, want 1", m.ApplyTargetCursor)
+	}
+	m.moveApplyTargetCursor(1)
+	if m.ApplyTargetCursor != 0 {
+		t.Fatalf("wrapped cursor = %d, want 0", m.ApplyTargetCursor)
+	}
+}
 
-	// Case 2: When Pi exists, Pi is true
-	_ = os.WriteFile(filepath.Join(tmp, "pi_auth.json"), []byte(`{}`), 0o600)
-	m2 := testModelForHotkeys(1)
-	m2.startApplyFlow()
-	if !m2.ApplyTargets[config.SourcePi] {
-		t.Errorf("expected Pi true when file exists")
+func TestBeginApplyFlowWithNoInstalledHarnessShowsNotice(t *testing.T) {
+	isolateApplyTestEnvironment(t)
+	m := testModelForHotkeys(1)
+	m.applyTargetOptions = config.InstalledApplyTargets()
+	updated, cmd := m.beginApplyFlow()
+	got := updated.(Model)
+	if cmd != nil {
+		t.Fatal("unexpected command")
 	}
-	if m2.ApplyTargets[config.SourceOMP] {
-		t.Errorf("expected OMP false when file missing")
+	if got.ApplyTargetSelect || got.ApplyConfirm {
+		t.Fatal("empty apply modal opened")
 	}
+	if got.Notice != "No supported agent harnesses found in PATH" {
+		t.Fatalf("notice = %q", got.Notice)
+	}
+}
 
-	// Case 3: When OMP exists, OMP is true
-	_ = os.WriteFile(filepath.Join(tmp, "omp_agent.db"), []byte(``), 0o600)
-	m3 := testModelForHotkeys(1)
-	m3.startApplyFlow()
-	if !m3.ApplyTargets[config.SourceOMP] {
-		t.Errorf("expected OMP true when file exists")
+func TestApplyFlow_DropsUnavailablePersistedTargets(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex", "pi")
+	account := &config.Account{Key: "acc-1", AccountID: "acc-1", AccessToken: "tok", Source: config.SourceManaged, Writable: true}
+	m := InitialModelWithUIState(
+		[]*config.Account{account},
+		nil,
+		nil,
+		config.UIState{LastApplyTargets: []string{"omp", "pi", "opencode"}},
+	)
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourcePi}) {
+		t.Fatalf("persisted installed targets = %v, want [pi]", got)
 	}
 }
 
@@ -374,6 +437,7 @@ func TestApplyFlow_RemembersConfirmedTargetsForSession(t *testing.T) {
 }
 
 func TestApplyFlow_LoadsPersistedTargetsSafely(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex", "omp")
 	account := &config.Account{Key: "acc-1", AccountID: "acc-1", AccessToken: "tok", Source: config.SourceManaged, Writable: true}
 	m := InitialModelWithUIState(
 		[]*config.Account{account},
@@ -391,9 +455,7 @@ func TestApplyFlow_LoadsPersistedTargetsSafely(t *testing.T) {
 }
 
 func TestApplyFlow_PersistsConfirmedTargetsAcrossRestart(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	isolateApplyTestEnvironment(t, "codex", "opencode", "pi", "omp")
 	m := testModelForHotkeys(1)
 	m.lastConfirmedApplyTargets = map[config.Source]bool{config.SourceCodex: true}
 	if err := config.SaveUIState(m.uiStateSnapshot()); err != nil {
@@ -438,9 +500,7 @@ func TestApplyTargetUIStateSaveFailureIsNonDestructive(t *testing.T) {
 }
 
 func TestApplyFlow_ConfirmedTargetsPersistBeforeApplyResult(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	tmp := isolateApplyTestEnvironment(t, "codex")
 	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
 	m := testModelForHotkeys(1)
 	m.startApplyFlow()
@@ -840,4 +900,32 @@ func TestBadges_EdgeCasesAndEmptySources(t *testing.T) {
 	if strings.Count(outMuted, "O") != 2 || !strings.Contains(outMuted, "C") || !strings.Contains(outMuted, "P") {
 		t.Errorf("expected C, two O letters (OpenCode + OMP) and P in muted rendered badges, got: %s", outMuted)
 	}
+}
+
+func isolateApplyTestEnvironment(t *testing.T, commands ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(root, "cq"))
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
+	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(root, "opencode", "auth.json"))
+	t.Setenv("OPENCODE_DATA_DIR", filepath.Join(root, "opencode-data"))
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(root, "pi", "auth.json"))
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(root, "omp", "agent.db"))
+	for _, dir := range []string{"home", "cq", "codex", "opencode", "opencode-data", "pi", "omp"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range commands {
+		if err := os.WriteFile(filepath.Join(bin, command), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin)
+	return root
 }

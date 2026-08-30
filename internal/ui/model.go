@@ -28,6 +28,7 @@ type Model struct {
 	ApplyTargetCursor         int
 	ApplyConfirm              bool
 	lastConfirmedApplyTargets map[config.Source]bool
+	applyTargetOptions        []config.Source
 	OMPRestoreConfirm         bool
 	HelpVisible               bool
 	ActionMenuVisible         bool
@@ -134,6 +135,7 @@ func InitialModelWithSettingsAndStartupUpdate(
 		progress.WithGradient("#4285F4", "#34A853"),
 		progress.WithoutPercentage(),
 	)
+	applyTargetOptions := config.InstalledApplyTargets()
 
 	m := Model{
 		defaultProgress:           defaultProgress,
@@ -144,7 +146,8 @@ func InitialModelWithSettingsAndStartupUpdate(
 		ActiveSourcesByIdentity:   activeSourcesByIdentity,
 		ActiveAccountIx:           0,
 		CompactMode:               uiState.CompactMode,
-		lastConfirmedApplyTargets: applyTargetsFromState(uiState.LastApplyTargets),
+		lastConfirmedApplyTargets: applyTargetsFromState(uiState.LastApplyTargets, applyTargetOptions),
+		applyTargetOptions:        applyTargetOptions,
 		UsageData:                 make(map[string]api.UsageData),
 		PlanTypeByAccount:         make(map[string]string),
 		LoadingMap:                make(map[string]bool),
