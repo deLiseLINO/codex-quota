@@ -3,6 +3,7 @@ package config
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -680,6 +681,10 @@ func applyAccountToOMP(account *Account, mode targetWriteMode) (string, error) {
 	if account == nil {
 		return "", fmt.Errorf("account is nil")
 	}
+	if strings.TrimSpace(account.AccountID) == "" && normalizeEmail(account.Email) == "" {
+		return "", fmt.Errorf("OMP account identity is empty")
+	}
+
 	path := ompAgentDbPath()
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("OMP agent.db path is unknown")
@@ -706,8 +711,6 @@ func applyAccountToOMP(account *Account, mode targetWriteMode) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", fmt.Errorf("failed to ensure directory for %s: %w", path, err)
 	}
-
-	// Ensure file exists with restrictive 0600 permissions before opening via SQLite
 	if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600); err == nil {
 		_ = f.Close()
 		_ = os.Chmod(path, 0o600)
@@ -720,8 +723,6 @@ func applyAccountToOMP(account *Account, mode targetWriteMode) (string, error) {
 	defer db.Close()
 
 	_, _ = db.Exec("PRAGMA busy_timeout = 5000;")
-
-	// Canonical OMP SQLite schema matching @oh-my-pi/pi-ai/src/auth/sqlite-credential-store.ts (AUTH_SCHEMA_VERSION = 7).
 	_, err = db.Exec(`
 		PRAGMA journal_mode = WAL;
 		PRAGMA synchronous = NORMAL;
@@ -758,50 +759,97 @@ func applyAccountToOMP(account *Account, mode targetWriteMode) (string, error) {
 	if !accountToWrite.ExpiresAt.IsZero() {
 		payload["expires"] = accountToWrite.ExpiresAt.UnixMilli()
 	}
-
 	jsonBytes, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal credential JSON: %w", err)
 	}
 
-	var identityKey string
-	if accID := strings.TrimSpace(accountToWrite.AccountID); accID != "" {
-		identityKey = "account:" + accID
-	}
-	if email := strings.TrimSpace(accountToWrite.Email); email != "" {
-		identityKey = "email:" + strings.ToLower(email)
+	accountID := strings.TrimSpace(accountToWrite.AccountID)
+	email := normalizeEmail(accountToWrite.Email)
+	identityKey := "account:" + accountID
+	if email != "" {
+		identityKey = "email:" + email
 	}
 
 	tx, err := db.Begin()
 	if err != nil {
 		return "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
+	defer tx.Rollback()
 
-	var existingRowID int64
-	if identityKey != "" && strings.TrimSpace(accountToWrite.AccountID) != "" {
-		_ = tx.QueryRow("SELECT id FROM auth_credentials WHERE provider = 'openai-codex' AND (identity_key = ? OR json_extract(data, '$.accountId') = ?) LIMIT 1", identityKey, accountToWrite.AccountID).Scan(&existingRowID)
-	} else if identityKey != "" {
-		_ = tx.QueryRow("SELECT id FROM auth_credentials WHERE provider = 'openai-codex' AND identity_key = ? LIMIT 1", identityKey).Scan(&existingRowID)
-	} else if strings.TrimSpace(accountToWrite.AccountID) != "" {
-		_ = tx.QueryRow("SELECT id FROM auth_credentials WHERE provider = 'openai-codex' AND json_extract(data, '$.accountId') = ? LIMIT 1", accountToWrite.AccountID).Scan(&existingRowID)
-	}
-
-	if existingRowID > 0 {
-		_, err = tx.Exec("UPDATE auth_credentials SET data = ?, identity_key = ?, updated_at = CAST(strftime('%s','now') AS INTEGER) WHERE id = ?", string(jsonBytes), identityKey, existingRowID)
+	var activeRowID int64
+	if accountID != "" {
+		err = tx.QueryRow(`
+			SELECT id FROM auth_credentials
+			WHERE provider = 'openai-codex'
+			  AND (identity_key = ? OR json_extract(data, '$.accountId') = ?)
+			ORDER BY id ASC LIMIT 1`,
+			"account:"+accountID, accountID,
+		).Scan(&activeRowID)
+		if errors.Is(err, sql.ErrNoRows) && email != "" {
+			err = tx.QueryRow(`
+				SELECT id FROM auth_credentials
+				WHERE provider = 'openai-codex'
+				  AND (identity_key = ? OR lower(json_extract(data, '$.email')) = ?)
+				  AND (json_extract(data, '$.accountId') IS NULL OR trim(json_extract(data, '$.accountId')) = '')
+				  AND (identity_key IS NULL OR identity_key NOT LIKE 'account:%')
+				ORDER BY id ASC LIMIT 1`,
+				"email:"+email, email,
+			).Scan(&activeRowID)
+		}
 	} else {
-		_, err = tx.Exec("INSERT INTO auth_credentials (provider, credential_type, data, disabled_cause, identity_key) VALUES ('openai-codex', 'oauth', ?, NULL, ?)", string(jsonBytes), identityKey)
+		err = tx.QueryRow(`
+			SELECT id FROM auth_credentials
+			WHERE provider = 'openai-codex'
+			  AND (identity_key = ? OR lower(json_extract(data, '$.email')) = ?)
+			ORDER BY id ASC LIMIT 1`,
+			"email:"+email, email,
+		).Scan(&activeRowID)
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("failed to find credential row in %s: %w", path, err)
 	}
 
-	if err == nil {
-		err = tx.Commit()
+	if activeRowID > 0 {
+		_, err = tx.Exec(
+			"UPDATE auth_credentials SET credential_type = 'oauth', data = ?, identity_key = ?, disabled_cause = NULL, updated_at = CAST(strftime('%s','now') AS INTEGER) WHERE id = ?",
+			string(jsonBytes), identityKey, activeRowID,
+		)
 	} else {
-		_ = tx.Rollback()
+		err = tx.QueryRow(
+			"INSERT INTO auth_credentials (provider, credential_type, data, disabled_cause, identity_key) VALUES ('openai-codex', 'oauth', ?, NULL, ?) RETURNING id",
+			string(jsonBytes), identityKey,
+		).Scan(&activeRowID)
 	}
-
 	if err != nil {
 		return "", fmt.Errorf("failed to write credential row in %s: %w", path, err)
 	}
 
+	var hasCacheTable int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'cache'").Scan(&hasCacheTable); err != nil {
+		return "", fmt.Errorf("failed to inspect OMP cache table in %s: %w", path, err)
+	}
+	if hasCacheTable != 0 {
+		_, err = tx.Exec(`
+			DELETE FROM cache
+			WHERE key LIKE 'session:sticky:openai-codex:%'
+			  AND CAST(json_extract(value, '$.credentialId') AS INTEGER) IN (
+				SELECT id FROM auth_credentials
+				WHERE provider = 'openai-codex' AND id != ?
+			  )`,
+			activeRowID,
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to clear stale OMP sticky cache entries in %s: %w", path, err)
+		}
+	}
+
+	if _, err = tx.Exec("DELETE FROM auth_credentials WHERE provider = 'openai-codex' AND id != ?", activeRowID); err != nil {
+		return "", fmt.Errorf("failed to remove inactive OMP credentials in %s: %w", path, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("failed to commit OMP credential update in %s: %w", path, err)
+	}
 	return path, nil
 }
 

@@ -151,7 +151,7 @@ func (m Model) renderApplyTargetModal() string {
 		case config.SourcePi:
 			label = "Pi agent"
 		case config.SourceOMP:
-			label = "Oh My Pi (pool/profile)"
+			label = "Oh My Pi (active account)"
 		}
 		lines = append(lines, InfoValueStyle.Render(fmt.Sprintf("%s [%d] [%s] %s", cursor, i+1, mark, label)))
 	}
@@ -246,7 +246,7 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine("Enter", "Open account menu"),
 		renderHelpLine("r", "Refresh active account"),
 		renderHelpLine("R", "Refresh all accounts"),
-		renderHelpLine("o", "Apply to apps (Codex/OpenCode/Pi/OMP)"),
+		renderHelpLine("o", "Apply to apps (Codex/OpenCode/Pi/active OMP account)"),
 		renderHelpLine("n", "Add account"),
 		renderHelpLine("x", "Delete account"),
 		renderHelpLine("i", "Account info"),

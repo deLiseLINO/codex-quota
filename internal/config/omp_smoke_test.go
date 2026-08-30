@@ -19,8 +19,17 @@ func TestOMPRealCLISmokeTest(t *testing.T) {
 	t.Setenv("HOME", tmp)
 	t.Setenv("PI_CONFIG_DIR", ".omp")
 	dbPath := filepath.Join(tmp, ".omp", "agent", "agent.db")
+	t.Setenv("CQ_OMP_DB_PATH", dbPath)
 
-	acct := &Account{
+	if _, err := ApplyAccountToOMP(&Account{
+		AccessToken: "tok-replaced-cli-smoke-test",
+		AccountID:   "acc-replaced",
+		Email:       "replaced@omp.sh",
+	}); err != nil {
+		t.Fatalf("seed replaced account: %v", err)
+	}
+
+	selected := &Account{
 		AccessToken:  "tok-real-cli-smoke-test",
 		RefreshToken: "ref-real-cli-smoke-test",
 		AccountID:    "acc-smoke-456",
@@ -31,7 +40,7 @@ func TestOMPRealCLISmokeTest(t *testing.T) {
 		Writable:     true,
 	}
 
-	appliedPath, err := ApplyAccountToOMP(acct)
+	appliedPath, err := ApplyAccountToOMP(selected)
 	if err != nil {
 		t.Fatalf("ApplyAccountToOMP error: %v", err)
 	}
@@ -47,9 +56,10 @@ func TestOMPRealCLISmokeTest(t *testing.T) {
 		t.Fatalf("omp token --list failed: %v\nOutput: %s", err, string(out))
 	}
 
-	outStr := string(out)
+	outStr := strings.TrimSpace(string(out))
 	t.Logf("omp token output:\n%s", outStr)
-	if !strings.Contains(outStr, "real-smoke@omp.sh") && !strings.Contains(outStr, "acc-smoke-456") {
-		t.Errorf("expected account listed by real omp binary, got:\n%s", outStr)
+	lines := strings.Split(outStr, "\n")
+	if len(lines) != 1 || (!strings.Contains(outStr, "real-smoke@omp.sh") && !strings.Contains(outStr, "acc-smoke-456")) || strings.Contains(outStr, "replaced@omp.sh") {
+		t.Errorf("expected exactly one selected account from real omp binary, got:\n%s", outStr)
 	}
 }

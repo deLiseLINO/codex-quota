@@ -181,7 +181,7 @@ func TestLoadAllAccountsWithSources_MultiSourceCombined(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmp, "pi"), 0o700)
 	_ = os.WriteFile(filepath.Join(tmp, "pi", "auth.json"), []byte(`{"openai-codex":{"type":"oauth","access":"tok-p","accountId":"acc-shared","email":"Shared@Example.com"}}`), 0o600)
 
-	// 4. Seed OMP with multiple pooled accounts
+	// 4. Seed a legacy OMP database with two Codex rows; only the first is active.
 	_ = os.MkdirAll(filepath.Join(tmp, "omp"), 0o700)
 	ompDbPath := filepath.Join(tmp, "omp", "agent.db")
 	ompDb, _ := sql.Open("sqlite", ompDbPath)
@@ -204,10 +204,7 @@ func TestLoadAllAccountsWithSources_MultiSourceCombined(t *testing.T) {
 		t.Errorf("active sources for acc-shared mismatch: got %v, want %v", gotShared, wantShared)
 	}
 
-	// Verify unique OMP account also has omp active source
-	gotUnique := result.ActiveSourcesByIdentity["account:acc-unique-omp"]
-	wantUnique := []string{"omp"}
-	if !reflect.DeepEqual(gotUnique, wantUnique) {
-		t.Errorf("active sources for acc-unique-omp mismatch: got %v, want %v", gotUnique, wantUnique)
+	if gotUnique := result.ActiveSourcesByIdentity["account:acc-unique-omp"]; len(gotUnique) != 0 {
+		t.Errorf("legacy inactive OMP row received an active badge: %v", gotUnique)
 	}
 }

@@ -200,8 +200,8 @@ func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
 	if !strings.Contains(outSelect, "Pi agent") {
 		t.Errorf("expected Pi agent in apply modal:\n%s", outSelect)
 	}
-	if !strings.Contains(outSelect, "Oh My Pi (pool/profile)") {
-		t.Errorf("expected Oh My Pi (pool/profile) in apply modal:\n%s", outSelect)
+	if !strings.Contains(outSelect, "Oh My Pi (active account)") {
+		t.Errorf("expected active Oh My Pi account in apply modal:\n%s", outSelect)
 	}
 
 	// 2. Press enter to go to Confirm modal
