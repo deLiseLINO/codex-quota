@@ -401,3 +401,78 @@ func TestOMPDatabase_ErrorHandlingAndCorruption(t *testing.T) {
 		t.Errorf("expected error message to mention corrupt credential JSON, got: %v", err)
 	}
 }
+func TestLoadOMPAccountFile_VariantsAndErrors(t *testing.T) {
+	tmp := t.TempDir()
+	dbPath := filepath.Join(tmp, "variants.db")
+
+	// 1. Zero rows in table returns nil, nil
+	db, _ := sql.Open("sqlite", dbPath)
+	_, _ = db.Exec(`CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT, credential_type TEXT, data TEXT, disabled_cause TEXT, identity_key TEXT);`)
+	db.Close()
+
+	acct, err := loadOMPAccountFile(dbPath)
+	if err != nil || acct != nil {
+		t.Errorf("zero rows: got acct=%v, err=%v, want nil, nil", acct, err)
+	}
+
+	// 2. Multiple rows returns the first account
+	db, _ = sql.Open("sqlite", dbPath)
+	p1, _ := json.Marshal(map[string]any{"access": "tok-first", "accountId": "acc-first"})
+	p2, _ := json.Marshal(map[string]any{"access": "tok-second", "accountId": "acc-second"})
+	_, _ = db.Exec(`INSERT INTO auth_credentials (provider, credential_type, data, identity_key) VALUES ('openai-codex', 'oauth', ?, 'account:acc-first')`, string(p1))
+	_, _ = db.Exec(`INSERT INTO auth_credentials (provider, credential_type, data, identity_key) VALUES ('openai-codex', 'oauth', ?, 'account:acc-second')`, string(p2))
+	db.Close()
+
+	firstAcct, err := loadOMPAccountFile(dbPath)
+	if err != nil || firstAcct == nil {
+		t.Fatalf("multiple rows load error: %v", err)
+	}
+	if firstAcct.AccountID != "acc-first" {
+		t.Errorf("expected first account acc-first, got %q", firstAcct.AccountID)
+	}
+
+	// 3. Corrupt DB propagates error
+	corruptDb := filepath.Join(tmp, "corrupt_file.db")
+	dbCorrupt, _ := sql.Open("sqlite", corruptDb)
+	_, _ = dbCorrupt.Exec(`CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT, disabled_cause TEXT, identity_key TEXT); INSERT INTO auth_credentials (provider, credential_type, data, identity_key) VALUES ('openai-codex', 'oauth', 'bad-json', 'account:1');`)
+	dbCorrupt.Close()
+
+	_, err = loadOMPAccountFile(corruptDb)
+	if err == nil {
+		t.Errorf("expected error from loadOMPAccountFile on corrupt DB, got nil")
+	}
+}
+
+func TestApplyAndDeleteOMP_ErrorsAndEmptyPaths(t *testing.T) {
+	tmp := t.TempDir()
+
+	// 1. Apply nil account returns error
+	if _, err := ApplyAccountToOMP(nil); err == nil {
+		t.Errorf("expected error applying nil account to OMP")
+	}
+
+	// 2. Apply when path is empty returns error
+	t.Setenv("CQ_OMP_DB_PATH", "")
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("HOME", "")
+	acct := &Account{AccessToken: "tok", Source: SourceOMP}
+	if _, err := ApplyAccountToOMP(acct); err == nil {
+		t.Errorf("expected error when OMP DB path is empty")
+	}
+	t.Setenv("HOME", tmp)
+
+	// 3. Delete when path is empty is safe no-op
+	t.Setenv("CQ_OMP_DB_PATH", "")
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("HOME", "")
+	if err := DeleteOMPAuthAccount(acct); err != nil {
+		t.Errorf("expected safe no-op on delete with empty path: %v", err)
+	}
+	t.Setenv("HOME", tmp)
+
+	// 4. Delete when DB file is missing is safe no-op
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "missing.db"))
+	if err := DeleteOMPAuthAccount(acct); err != nil {
+		t.Errorf("expected safe no-op on delete with missing DB: %v", err)
+	}
+}

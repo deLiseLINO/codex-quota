@@ -339,4 +339,55 @@ func TestDeletePiAuthAccount_IsolationAndSafety(t *testing.T) {
 	if err := DeletePiAuthAccount(nil); err != nil {
 		t.Errorf("delete nil should be safe no-op, got: %v", err)
 	}
+
+	// Case 4: Delete when auth.json is missing on disk -> safe no-op
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "missing_auth.json"))
+	if err := DeletePiAuthAccount(managedAcct); err != nil {
+		t.Errorf("delete missing file should be safe no-op, got: %v", err)
+	}
+
+	// Case 5: Delete when auth.json is corrupted JSON -> returns error
+	corruptAuth := filepath.Join(tmp, "corrupt_auth.json")
+	_ = os.WriteFile(corruptAuth, []byte("bad-json{"), 0o600)
+	t.Setenv("CQ_PI_AUTH_PATH", corruptAuth)
+	if err := DeletePiAuthAccount(managedAcct); err == nil {
+		t.Errorf("expected error on deleting from corrupt JSON, got nil")
+	}
+
+	// Case 6: Delete when piAuthPath() is empty -> safe no-op
+	t.Setenv("CQ_PI_AUTH_PATH", "")
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("HOME", "")
+	if err := DeletePiAuthAccount(managedAcct); err != nil {
+		t.Errorf("delete with empty path should be safe no-op, got: %v", err)
+	}
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_PI_AUTH_PATH", piAuth)
+}
+
+func TestApplyAccountToPi_ErrorsAndEdgeCases(t *testing.T) {
+	tmp := t.TempDir()
+
+	// 1. Nil account returns error
+	if _, err := ApplyAccountToPi(nil); err == nil {
+		t.Errorf("expected error applying nil account to Pi")
+	}
+
+	// 2. Empty path returns error
+	t.Setenv("CQ_PI_AUTH_PATH", "")
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("HOME", "")
+	acct := &Account{AccessToken: "tok", Source: SourcePi}
+	if _, err := ApplyAccountToPi(acct); err == nil {
+		t.Errorf("expected error when Pi path is empty")
+	}
+	t.Setenv("HOME", tmp)
+
+	// 3. Corrupt JSON in existing auth.json returns error
+	corruptAuth := filepath.Join(tmp, "corrupt.json")
+	_ = os.WriteFile(corruptAuth, []byte("bad-json{"), 0o600)
+	t.Setenv("CQ_PI_AUTH_PATH", corruptAuth)
+	if _, err := ApplyAccountToPi(acct); err == nil {
+		t.Errorf("expected error when existing Pi auth.json is corrupt")
+	}
 }
