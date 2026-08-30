@@ -173,6 +173,25 @@ func ApplyToTargetsCmd(account *config.Account, targets []config.Source) tea.Cmd
 	}
 }
 
+func RestoreOMPAccountsCmd() tea.Cmd {
+	return func() tea.Msg {
+		count, path, err := config.RestoreManagedAccountsToOMP()
+		if err != nil {
+			return ErrMsg{Err: fmt.Errorf("failed to restore OMP pool: %w", err)}
+		}
+		result, err := config.LoadAllAccountsWithSources()
+		if err != nil {
+			return ErrMsg{Err: fmt.Errorf("failed to reload accounts: %w", err)}
+		}
+		return AccountsMsg{
+			Accounts:                result.Accounts,
+			SourcesByAccountID:      result.SourcesByAccountID,
+			ActiveSourcesByIdentity: result.ActiveSourcesByIdentity,
+			Notice:                  fmt.Sprintf("restored %d OMP accounts: %s", count, filepath.Base(path)),
+		}
+	}
+}
+
 func DeleteAccountSourcesCmd(account *config.Account, sources []config.Source, activeKey string) tea.Cmd {
 	accountSnapshot := cloneAccount(account)
 	if accountSnapshot == nil {

@@ -27,6 +27,7 @@ type Model struct {
 	ApplyTargets            map[config.Source]bool
 	ApplyTargetCursor       int
 	ApplyConfirm            bool
+	OMPRestoreConfirm       bool
 	HelpVisible             bool
 	ActionMenuVisible       bool
 	ActionMenuCursor        int
@@ -234,6 +235,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.ApplyConfirm {
 			return m.handleApplyConfirm(keyStr)
+		}
+		if m.OMPRestoreConfirm {
+			return m.handleOMPRestoreConfirm(keyStr)
 		}
 
 		switch keyStr {

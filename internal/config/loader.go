@@ -77,7 +77,7 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 			externalAccounts = append(externalAccounts, ompAccounts...)
 		}
 	}
-	activeOMPAccount, err := loadOMPAccountFile(ompAgentDbPath())
+	activeOMPAccounts, err := loadOMPAccounts(ompAgentDbPath())
 	if err != nil {
 		return AccountsLoadResult{}, err
 	}
@@ -110,7 +110,9 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 	appendActiveSource(activeSourcesByIdentity, codexAccount, SourceCodex)
 	appendActiveSource(activeSourcesByIdentity, activeOpenCodeAccount, SourceOpenCode)
 	appendActiveSource(activeSourcesByIdentity, activePiAccount, SourcePi)
-	appendActiveSource(activeSourcesByIdentity, activeOMPAccount, SourceOMP)
+	for _, account := range activeOMPAccounts {
+		appendActiveSource(activeSourcesByIdentity, account, SourceOMP)
+	}
 	accounts = dedupeAccounts(accounts)
 	for _, account := range accounts {
 		finalizeAccount(account)

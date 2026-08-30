@@ -320,6 +320,181 @@ func TestApplyAccountToOMP_ExistingSelectedPreservesRowIDProviderAndValidSticky(
 	}
 }
 
+func TestRestoreManagedAccountsToOMP_MirrorsPoolAndPreservesRows(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
+	dbPath := filepath.Join(tmp, "work", "agent.db")
+	t.Setenv("CQ_OMP_DB_PATH", dbPath)
+
+	managedPath, err := managedAccountsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONMap(managedPath, map[string]any{"accounts": []managedAccount{
+		{Label: "one", AccountID: "acc-1", Email: "one@omp.sh", AccessToken: "tok-1"},
+		{Label: "duplicate", AccountID: "acc-1", Email: "one@omp.sh", AccessToken: "tok-duplicate"},
+		{Label: "email-only duplicate", Email: "one@omp.sh", AccessToken: "tok-email-only"},
+		{Label: "two", AccountID: "acc-2", Email: "two@omp.sh", AccessToken: "tok-2"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT, credential_type TEXT, data TEXT, disabled_cause TEXT, identity_key TEXT, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
+		CREATE TABLE cache (key TEXT PRIMARY KEY, value TEXT, expires_at INTEGER);
+		INSERT INTO auth_credentials (id, provider, credential_type, data, identity_key) VALUES (1, 'openai-codex', 'oauth', '{"accountId":"acc-1","access":"old"}', 'account:acc-1');
+		INSERT INTO auth_credentials (id, provider, credential_type, data, identity_key) VALUES (2, 'openai-codex', 'oauth', '{"accountId":"obsolete"}', 'account:obsolete');
+		INSERT INTO auth_credentials (id, provider, credential_type, data, identity_key) VALUES (3, 'anthropic', 'api_key', '{"key":"keep"}', NULL);
+		INSERT INTO cache VALUES ('session:sticky:openai-codex:keep', '{"credentialId":1}', 1);
+		INSERT INTO cache VALUES ('session:sticky:openai-codex:stale', '{"credentialId":2}', 1);
+	`)
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count, path, err := RestoreManagedAccountsToOMP()
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if count != 2 || path != dbPath {
+		t.Fatalf("restore result = %d, %q", count, path)
+	}
+	db, _ = sql.Open("sqlite", dbPath)
+	defer db.Close()
+	var codexCount, anthropicCount, rowID, keepSticky, staleSticky int
+	_ = db.QueryRow("SELECT COUNT(*) FROM auth_credentials WHERE provider = 'openai-codex'").Scan(&codexCount)
+	_ = db.QueryRow("SELECT COUNT(*) FROM auth_credentials WHERE provider = 'anthropic'").Scan(&anthropicCount)
+	_ = db.QueryRow("SELECT id FROM auth_credentials WHERE json_extract(data, '$.accountId') = 'acc-1'").Scan(&rowID)
+	_ = db.QueryRow("SELECT COUNT(*) FROM cache WHERE key = 'session:sticky:openai-codex:keep'").Scan(&keepSticky)
+	_ = db.QueryRow("SELECT COUNT(*) FROM cache WHERE key = 'session:sticky:openai-codex:stale'").Scan(&staleSticky)
+	if codexCount != 2 || anthropicCount != 1 || rowID != 1 || keepSticky != 1 || staleSticky != 0 {
+		t.Errorf("unexpected mirrored OMP state: codex=%d anthropic=%d row=%d keep=%d stale=%d", codexCount, anthropicCount, rowID, keepSticky, staleSticky)
+	}
+}
+
+func TestRestoreManagedAccountsToOMP_RejectsInvalidInputWithoutMutation(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
+	dbPath := filepath.Join(tmp, "agent.db")
+	t.Setenv("CQ_OMP_DB_PATH", dbPath)
+	managedPath, err := managedAccountsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONMap(managedPath, map[string]any{"accounts": []managedAccount{{AccountID: "bad", AccessToken: ""}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApplyAccountToOMP(&Account{AccountID: "preserved", AccessToken: "tok"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RestoreManagedAccountsToOMP(); err == nil {
+		t.Fatal("expected malformed managed account error")
+	}
+	accounts, err := loadOMPAccounts(dbPath)
+	if err != nil || len(accounts) != 1 || accounts[0].AccountID != "preserved" {
+		t.Errorf("invalid restore mutated OMP: %#v, %v", accounts, err)
+	}
+}
+
+func TestRestoreManagedAccountsToOMP_EmptyManagedStoreDoesNotMutate(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
+	dbPath := filepath.Join(tmp, "agent.db")
+	t.Setenv("CQ_OMP_DB_PATH", dbPath)
+	if _, err := ApplyAccountToOMP(&Account{AccountID: "preserved", AccessToken: "tok"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RestoreManagedAccountsToOMP(); err == nil {
+		t.Fatal("expected empty managed store error")
+	}
+	accounts, err := loadOMPAccounts(dbPath)
+	if err != nil || len(accounts) != 1 || accounts[0].AccountID != "preserved" {
+		t.Errorf("empty restore mutated OMP: %#v, %v", accounts, err)
+	}
+}
+
+func TestApplyAccountToOMP_CollapsesRestoredPool(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
+	dbPath := filepath.Join(tmp, "agent.db")
+	t.Setenv("CQ_OMP_DB_PATH", dbPath)
+	managedPath, err := managedAccountsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONMap(managedPath, map[string]any{"accounts": []managedAccount{
+		{AccountID: "acc-1", Email: "one@omp.sh", AccessToken: "tok-1"},
+		{AccountID: "acc-2", Email: "two@omp.sh", AccessToken: "tok-2"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if count, _, err := RestoreManagedAccountsToOMP(); err != nil || count != 2 {
+		t.Fatalf("restore = %d, %v", count, err)
+	}
+	if _, err := ApplyAccountToOMP(&Account{AccountID: "acc-1", Email: "one@omp.sh", AccessToken: "tok-1-new"}); err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := loadOMPAccounts(dbPath)
+	if err != nil || len(accounts) != 1 || accounts[0].AccountID != "acc-1" {
+		t.Errorf("exclusive apply did not collapse restored pool: %#v, %v", accounts, err)
+	}
+}
+
+func TestRestoreManagedAccountsToOMP_RollsBackAndRespectsActiveProfile(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
+	t.Setenv("OMP_PROFILE", "work")
+	managedPath, err := managedAccountsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONMap(managedPath, map[string]any{"accounts": []managedAccount{
+		{AccountID: "acc-1", Email: "one@omp.sh", AccessToken: "tok-new"},
+		{AccountID: "acc-2", Email: "two@omp.sh", AccessToken: "tok-2"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	workPath := ompAgentDbPath()
+	if _, err := ApplyAccountToOMP(&Account{AccountID: "acc-1", Email: "one@omp.sh", AccessToken: "tok-old"}); err != nil {
+		t.Fatal(err)
+	}
+	db, _ := sql.Open("sqlite", workPath)
+	_, err = db.Exec(`
+		INSERT INTO auth_credentials (provider, credential_type, data, identity_key) VALUES ('openai-codex', 'oauth', '{"accountId":"obsolete"}', 'account:obsolete');
+		CREATE TRIGGER block_restore_delete BEFORE DELETE ON auth_credentials
+		WHEN OLD.provider = 'openai-codex' BEGIN SELECT RAISE(ABORT, 'blocked restore'); END;
+	`)
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RestoreManagedAccountsToOMP(); err == nil {
+		t.Fatal("expected atomic restore failure")
+	}
+	db, _ = sql.Open("sqlite", workPath)
+	defer db.Close()
+	var count int
+	var access string
+	_ = db.QueryRow("SELECT COUNT(*) FROM auth_credentials WHERE provider = 'openai-codex'").Scan(&count)
+	_ = db.QueryRow("SELECT json_extract(data, '$.access') FROM auth_credentials WHERE json_extract(data, '$.accountId') = 'acc-1'").Scan(&access)
+	if count != 2 || access != "tok-old" {
+		t.Errorf("restore leaked a partial transaction: count=%d access=%q", count, access)
+	}
+	defaultPath := filepath.Join(tmp, ".omp", "agent", "agent.db")
+	if _, err := os.Stat(defaultPath); !os.IsNotExist(err) {
+		t.Errorf("restore touched default profile: %v", err)
+	}
+}
+
 func TestApplyAccountToOMP_NewSelectedReplacesOtherCodexRows(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)

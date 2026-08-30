@@ -49,6 +49,9 @@ func (m Model) currentOverlayModal() string {
 	if m.ApplyConfirm {
 		return m.renderApplyConfirmModal()
 	}
+	if m.OMPRestoreConfirm {
+		return m.renderOMPRestoreConfirmModal()
+	}
 
 	if m.Err != nil {
 		return m.renderErrorModal()
@@ -179,6 +182,15 @@ func (m Model) renderApplyConfirmModal() string {
 	return renderMessageModal("Apply account", message, WarningStyle, m.Width)
 }
 
+func (m Model) renderOMPRestoreConfirmModal() string {
+	return renderMessageModal(
+		"Restore OMP pool",
+		"Restore all CQ accounts to OMP?\nRe-enables OMP auto-balancing; CQ copies stay.\n[enter] Restore   [esc] Cancel",
+		WarningStyle,
+		m.Width,
+	)
+}
+
 func (m Model) renderInfoModal() string {
 	account := m.activeAccount()
 
@@ -248,6 +260,7 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine("r", "Refresh active account"),
 		renderHelpLine("R", "Refresh all accounts"),
 		renderHelpLine("o", "Apply to apps (Codex/OpenCode/Pi/active OMP account)"),
+		renderHelpLine("Enter → p", "Restore CQ accounts to the OMP pool"),
 		renderHelpLine("n", "Add account"),
 		renderHelpLine("x", "Delete account"),
 		renderHelpLine("i", "Account info"),

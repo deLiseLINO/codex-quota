@@ -149,6 +149,12 @@ func (m Model) handleActionMenu(keyStr string) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	for index, item := range items {
+		if keyStr == item.Shortcut {
+			m.ActionMenuCursor = index
+			return m.confirmActionMenu()
+		}
+	}
 	return m, nil
 }
 
@@ -253,5 +259,22 @@ func (m Model) handleApplyConfirm(keyStr string) (tea.Model, tea.Cmd) {
 		return m, ApplyToTargetsCmd(account, targets)
 	}
 
+	return m, nil
+}
+
+func (m Model) handleOMPRestoreConfirm(keyStr string) (tea.Model, tea.Cmd) {
+	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.OMPRestoreConfirm = false
+		return m, nil
+	case "enter":
+		m.OMPRestoreConfirm = false
+		m.Loading = true
+		m.Err = nil
+		m.Notice = ""
+		return m, RestoreOMPAccountsCmd()
+	}
 	return m, nil
 }

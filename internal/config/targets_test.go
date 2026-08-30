@@ -204,7 +204,7 @@ func TestLoadAllAccountsWithSources_MultiSourceCombined(t *testing.T) {
 		t.Errorf("active sources for acc-shared mismatch: got %v, want %v", gotShared, wantShared)
 	}
 
-	if gotUnique := result.ActiveSourcesByIdentity["account:acc-unique-omp"]; len(gotUnique) != 0 {
-		t.Errorf("legacy inactive OMP row received an active badge: %v", gotUnique)
+	if gotUnique := result.ActiveSourcesByIdentity["account:acc-unique-omp"]; !reflect.DeepEqual(gotUnique, []string{"omp"}) {
+		t.Errorf("OMP pool account should receive an active badge: %v", gotUnique)
 	}
 }

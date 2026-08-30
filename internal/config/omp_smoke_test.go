@@ -21,45 +21,49 @@ func TestOMPRealCLISmokeTest(t *testing.T) {
 	dbPath := filepath.Join(tmp, ".omp", "agent", "agent.db")
 	t.Setenv("CQ_OMP_DB_PATH", dbPath)
 
-	if _, err := ApplyAccountToOMP(&Account{
-		AccessToken: "tok-replaced-cli-smoke-test",
-		AccountID:   "acc-replaced",
-		Email:       "replaced@omp.sh",
-	}); err != nil {
-		t.Fatalf("seed replaced account: %v", err)
-	}
-
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
 	selected := &Account{
 		AccessToken:  "tok-real-cli-smoke-test",
 		RefreshToken: "ref-real-cli-smoke-test",
 		AccountID:    "acc-smoke-456",
 		Email:        "real-smoke@omp.sh",
 		ExpiresAt:    time.Now().Add(48 * time.Hour),
-		Source:       SourceOMP,
-		FilePath:     dbPath,
+		Source:       SourceManaged,
 		Writable:     true,
 	}
-
-	appliedPath, err := ApplyAccountToOMP(selected)
-	if err != nil {
-		t.Fatalf("ApplyAccountToOMP error: %v", err)
+	for _, account := range []*Account{
+		selected,
+		{AccessToken: "tok-smoke-two", AccountID: "acc-smoke-2", Email: "two@omp.sh"},
+		{AccessToken: "tok-smoke-three", AccountID: "acc-smoke-3", Email: "three@omp.sh"},
+	} {
+		if err := UpsertManagedAccount(account); err != nil {
+			t.Fatalf("save smoke account: %v", err)
+		}
 	}
-	if appliedPath != dbPath {
-		t.Errorf("appliedPath = %q, want %q", appliedPath, dbPath)
+	listCount := func() int {
+		cmd := exec.Command(ompPath, "token", "openai-codex", "--list")
+		cmd.Env = append(os.Environ(), "HOME="+tmp)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("omp token --list failed: %v\nOutput: %s", err, string(out))
+		}
+		outStr := strings.TrimSpace(string(out))
+		t.Logf("omp token output:\n%s", outStr)
+		if outStr == "" {
+			return 0
+		}
+		return len(strings.Split(outStr, "\n"))
 	}
-
-	// Run actual installed omp CLI with HOME set to the temporary directory
-	cmd := exec.Command(ompPath, "token", "openai-codex", "--list")
-	cmd.Env = append(os.Environ(), "HOME="+tmp)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("omp token --list failed: %v\nOutput: %s", err, string(out))
+	if count, _, err := RestoreManagedAccountsToOMP(); err != nil || count != 3 || listCount() != 3 {
+		t.Fatalf("restore smoke = count %d, err %v", count, err)
 	}
-
-	outStr := strings.TrimSpace(string(out))
-	t.Logf("omp token output:\n%s", outStr)
-	lines := strings.Split(outStr, "\n")
-	if len(lines) != 1 || (!strings.Contains(outStr, "real-smoke@omp.sh") && !strings.Contains(outStr, "acc-smoke-456")) || strings.Contains(outStr, "replaced@omp.sh") {
-		t.Errorf("expected exactly one selected account from real omp binary, got:\n%s", outStr)
+	if appliedPath, err := ApplyAccountToOMP(selected); err != nil || appliedPath != dbPath {
+		t.Fatalf("exclusive apply smoke = %q, %v", appliedPath, err)
+	}
+	if got := listCount(); got != 1 {
+		t.Fatalf("expected one OMP credential after exclusive apply, got %d", got)
+	}
+	if count, _, err := RestoreManagedAccountsToOMP(); err != nil || count != 3 || listCount() != 3 {
+		t.Fatalf("second restore smoke = count %d, err %v", count, err)
 	}
 }

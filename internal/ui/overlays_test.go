@@ -149,6 +149,21 @@ func TestRenderActionMenuModalListsPrimaryActions(t *testing.T) {
 	}
 }
 
+func TestRenderOMPRestoreActionAndConfirmation(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.ActionMenuVisible = true
+	menu := ansi.Strip(m.renderActionMenuModal())
+	if !strings.Contains(menu, "Restore all accounts to OMP pool") || !strings.Contains(menu, " p") {
+		t.Fatalf("expected restore action with shortcut:\n%s", menu)
+	}
+	m.ActionMenuVisible = false
+	m.OMPRestoreConfirm = true
+	confirm := ansi.Strip(m.renderOMPRestoreConfirmModal())
+	if !strings.Contains(confirm, "Re-enables OMP auto-balancing; CQ copies stay.") || !strings.Contains(confirm, "[enter] Restore") {
+		t.Fatalf("expected restore confirmation explanation:\n%s", confirm)
+	}
+}
+
 func TestRenderActionMenuModalShowsInstallUpdateInGlobalActions(t *testing.T) {
 	m := testModelForHotkeys(1)
 	m.ActionMenuVisible = true

@@ -538,6 +538,54 @@ func TestApplyToTargetsCmd_Execution(t *testing.T) {
 	}
 }
 
+func TestRestoreOMPAccountsCmdImmediatelyMarksAllManagedAccounts(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "omp", "agent.db"))
+	for _, account := range []*config.Account{
+		{Label: "one", AccountID: "acc-1", Email: "one@omp.sh", AccessToken: "tok-1"},
+		{Label: "two", AccountID: "acc-2", Email: "two@omp.sh", AccessToken: "tok-2"},
+	} {
+		if err := config.UpsertManagedAccount(account); err != nil {
+			t.Fatal(err)
+		}
+	}
+	msg := RestoreOMPAccountsCmd()()
+	accountsMsg, ok := msg.(AccountsMsg)
+	if !ok {
+		t.Fatalf("restore command returned %T: %#v", msg, msg)
+	}
+	m := testModelForHotkeys(1)
+	updated, _ := m.Update(accountsMsg)
+	m = updated.(Model)
+	for _, account := range m.Accounts {
+		if account.AccountID == "acc-1" || account.AccountID == "acc-2" {
+			if !strings.Contains(m.activeSourceBadgesForAccount(account), "M") {
+				t.Errorf("restored account %s missing immediate OMP badge", account.AccountID)
+			}
+		}
+	}
+	if !strings.Contains(m.Notice, "restored 2 OMP accounts") {
+		t.Errorf("expected restore notice, got %q", m.Notice)
+	}
+}
+
+func TestRestoreOMPAccountsCmdSurfacesErrors(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "omp", "agent.db"))
+	msg := RestoreOMPAccountsCmd()()
+	errMsg, ok := msg.(ErrMsg)
+	if !ok || errMsg.Err == nil {
+		t.Fatalf("expected restore error, got %#v", msg)
+	}
+	m := testModelForHotkeys(1)
+	updated, _ := m.Update(errMsg)
+	if updated.(Model).Err == nil {
+		t.Fatal("expected error modal state")
+	}
+}
 func TestBadges_EdgeCasesAndEmptySources(t *testing.T) {
 	// 1. nil account returns empty
 	m := testModelForHotkeys(1)

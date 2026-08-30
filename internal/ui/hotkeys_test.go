@@ -277,6 +277,27 @@ func TestActionMenuRefreshAllTriggersBulkRefresh(t *testing.T) {
 	}
 }
 
+func TestOMPRestoreMenuShortcutConfirmAndCancel(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.ActionMenuVisible = true
+	updated, _ := m.handleActionMenu("p")
+	m = updated.(Model)
+	if !m.OMPRestoreConfirm || m.ActionMenuVisible {
+		t.Fatal("expected OMP restore confirmation from menu shortcut")
+	}
+	updated, _ = m.handleOMPRestoreConfirm("esc")
+	m = updated.(Model)
+	if m.OMPRestoreConfirm {
+		t.Fatal("expected restore cancellation")
+	}
+	m.OMPRestoreConfirm = true
+	updated, cmd := m.handleOMPRestoreConfirm("enter")
+	m = updated.(Model)
+	if m.OMPRestoreConfirm || cmd == nil || !m.Loading {
+		t.Fatal("expected restore command to start")
+	}
+}
+
 func TestHelpAliasesOpenHelpOverlay(t *testing.T) {
 	tests := []struct {
 		name string

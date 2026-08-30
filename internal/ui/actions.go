@@ -42,6 +42,11 @@ func (m Model) confirmActionMenu() (tea.Model, tea.Cmd) {
 		return m.toggleViewMode()
 	case actionMenuDelete:
 		return m.beginDeleteFlow()
+	case actionMenuRestoreOMPPool:
+		m.OMPRestoreConfirm = true
+		m.Err = nil
+		m.Notice = ""
+		return m, nil
 	case actionMenuUpdate:
 		if !m.openUpdatePrompt() {
 			return m, nil
@@ -56,6 +61,7 @@ func (m *Model) openHelpOverlay() {
 	m.resetActionMenuState()
 	m.resetDeleteState()
 	m.resetApplyState()
+	m.OMPRestoreConfirm = false
 	m.ShowInfo = false
 	m.Notice = ""
 	m.Err = nil
@@ -72,6 +78,7 @@ func (m *Model) openActionMenu() {
 	m.resetApplyState()
 	m.ShowInfo = false
 	m.Notice = ""
+	m.OMPRestoreConfirm = false
 	m.Err = nil
 	m.ActionMenuVisible = true
 	m.ActionMenuCursor = 0
@@ -80,6 +87,7 @@ func (m *Model) openActionMenu() {
 func (m *Model) resetActionMenuState() {
 	m.ActionMenuVisible = false
 	m.ActionMenuCursor = 0
+	m.OMPRestoreConfirm = false
 }
 
 func (m *Model) openUpdatePrompt() bool {
@@ -252,6 +260,7 @@ func (m *Model) resetDeleteState() {
 
 func (m *Model) resetApplyState() {
 	m.ApplyTargetSelect = false
+	m.OMPRestoreConfirm = false
 	m.ApplyConfirm = false
 	m.ApplyTargets = nil
 	m.ApplyTargetCursor = 0
