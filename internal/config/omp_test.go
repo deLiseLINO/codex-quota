@@ -65,7 +65,42 @@ func TestOMPPath_PrecedenceAndProfileIsolation(t *testing.T) {
 		t.Errorf("ompAgentDbPath() with CQ_OMP_DB_PATH = %q, want %q", got, cqOverride)
 	}
 	t.Setenv("CQ_OMP_DB_PATH", "")
+	// Case 8: XDG_DATA_HOME with existing profile path
+	t.Setenv("CQ_OMP_DB_PATH", "")
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("OMP_PROFILE", "work")
+	xdgData := filepath.Join(tmp, "xdg-data")
+	t.Setenv("XDG_DATA_HOME", xdgData)
+	xdgProfileDb := filepath.Join(xdgData, "omp", "profiles", "work", "agent", "agent.db")
+	_ = os.MkdirAll(filepath.Dir(xdgProfileDb), 0o700)
+	_ = os.WriteFile(xdgProfileDb, []byte(""), 0o600)
+	if got := ompAgentDbPath(); got != xdgProfileDb {
+		t.Errorf("ompAgentDbPath() with existing XDG profile = %q, want %q", got, xdgProfileDb)
+	}
 
+	// Case 9: XDG_DATA_HOME default path
+	t.Setenv("OMP_PROFILE", "")
+	xdgDefaultDb := filepath.Join(xdgData, "omp", "agent", "agent.db")
+	_ = os.MkdirAll(filepath.Dir(xdgDefaultDb), 0o700)
+	_ = os.WriteFile(xdgDefaultDb, []byte(""), 0o600)
+	if got := ompAgentDbPath(); got != xdgDefaultDb {
+		t.Errorf("ompAgentDbPath() with existing XDG default = %q, want %q", got, xdgDefaultDb)
+	}
+
+	// Case 10: Empty home returns empty
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
+	if got := ompAgentDbPath(); got != "" {
+		t.Errorf("ompAgentDbPath() with empty HOME = %q, want empty", got)
+	}
+	if paths := ompAgentDbPaths(); paths != nil {
+		t.Errorf("ompAgentDbPaths() with empty HOME = %v, want nil", paths)
+	}
+	if HasExistingOMPAuth() {
+		t.Errorf("HasExistingOMPAuth() with empty path should be false")
+	}
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_OMP_DB_PATH", "")
 	// Case 7: HasExistingOMPAuth
 	if HasExistingOMPAuth() {
 		t.Errorf("HasExistingOMPAuth() should be false before database creation")

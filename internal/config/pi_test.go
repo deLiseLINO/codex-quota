@@ -44,6 +44,19 @@ func TestPiPath_PrecedenceAndResolution(t *testing.T) {
 	if !HasExistingPiAuth() {
 		t.Errorf("HasExistingPiAuth() should be true after file creation")
 	}
+	// Case 5: Empty path returns nil
+	t.Setenv("CQ_PI_AUTH_PATH", "")
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	t.Setenv("HOME", "")
+	if got := piAuthPath(); got != "" {
+		t.Errorf("piAuthPath() with empty HOME = %q, want empty", got)
+	}
+	if paths := piAuthPaths(); paths != nil {
+		t.Errorf("piAuthPaths() with empty HOME = %v, want nil", paths)
+	}
+	if HasExistingPiAuth() {
+		t.Errorf("HasExistingPiAuth() with empty path should be false")
+	}
 }
 
 func TestLoadPiAccountFile_StrictOAuthOnly(t *testing.T) {

@@ -211,3 +211,197 @@ func TestApplyFlow_DefaultSelectionRespectsExistingFiles(t *testing.T) {
 		t.Errorf("expected OMP true when file exists")
 	}
 }
+func TestApplyFlow_KeyHandlingAndCancel(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+
+	// 1. Up and Down keys move cursor
+	updated, _ := m.handleApplyTargetSelection("up")
+	m = updated.(Model)
+	if m.ApplyTargetCursor != 3 {
+		t.Errorf("up arrow cursor = %d, want 3", m.ApplyTargetCursor)
+	}
+
+	updated, _ = m.handleApplyTargetSelection("down")
+	m = updated.(Model)
+	if m.ApplyTargetCursor != 0 {
+		t.Errorf("down arrow cursor = %d, want 0", m.ApplyTargetCursor)
+	}
+
+	updated, _ = m.handleApplyTargetSelection("k")
+	m = updated.(Model)
+	if m.ApplyTargetCursor != 3 {
+		t.Errorf("k key cursor = %d, want 3", m.ApplyTargetCursor)
+	}
+
+	updated, _ = m.handleApplyTargetSelection("j")
+	m = updated.(Model)
+	if m.ApplyTargetCursor != 0 {
+		t.Errorf("j key cursor = %d, want 0", m.ApplyTargetCursor)
+	}
+
+	// 2. Space key toggles current cursor selection
+	wasSelected := m.ApplyTargets[config.SourceCodex]
+	updated, _ = m.handleApplyTargetSelection(" ")
+	m = updated.(Model)
+	if m.ApplyTargets[config.SourceCodex] == wasSelected {
+		t.Errorf("space should toggle selection")
+	}
+
+	// 3. Esc cancels apply flow
+	updated, _ = m.handleApplyTargetSelection("esc")
+	m = updated.(Model)
+	if m.ApplyTargetSelect || m.ApplyConfirm {
+		t.Errorf("esc should close apply modals")
+	}
+
+	// 4. Confirm modal esc cancels
+	m.startApplyFlow()
+	updated, _ = m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	if !m.ApplyConfirm {
+		t.Fatalf("expected ApplyConfirm true")
+	}
+	updated, _ = m.handleApplyConfirm("esc")
+	m = updated.(Model)
+	if m.ApplyConfirm {
+		t.Errorf("esc on confirm modal should close it")
+	}
+
+	// 5. Confirm with nil account
+	mEmpty := testModelForHotkeys(0)
+	mEmpty.startApplyFlow()
+	mEmpty.ApplyConfirm = true
+	updated, cmd := mEmpty.handleApplyConfirm("enter")
+	mEmpty = updated.(Model)
+	if mEmpty.ApplyConfirm || cmd != nil {
+		t.Errorf("confirm with nil account should reset without command")
+	}
+
+	// 6. beginApplyFlow with nil active account
+	mNil := testModelForHotkeys(0)
+	updated, cmd = mNil.beginApplyFlow()
+	if cmd != nil {
+		t.Errorf("beginApplyFlow on empty accounts should return nil command")
+	}
+}
+
+func TestApplyFlow_FormatErrorsAndHelpers(t *testing.T) {
+	// 1. formatTargetErrors
+	if got := formatTargetErrors(nil); got != "" {
+		t.Errorf("formatTargetErrors(nil) = %q, want empty", got)
+	}
+
+	errMap := map[config.Source]error{
+		config.SourceCodex:    os.ErrPermission,
+		config.SourceOpenCode: nil,
+		config.SourcePi:       os.ErrNotExist,
+	}
+	formatted := formatTargetErrors(errMap)
+	if !strings.Contains(formatted, "codex:") || !strings.Contains(formatted, "pi:") {
+		t.Errorf("formatTargetErrors output missing sources: %s", formatted)
+	}
+
+	// 2. mapKeysSortedBySource
+	valMap := map[config.Source]string{
+		config.SourceOMP:      "/path/omp",
+		config.SourceCodex:    "/path/codex",
+		config.SourcePi:       "/path/pi",
+		config.SourceOpenCode: "/path/opencode",
+		"invalid":             "/path/invalid",
+	}
+	sorted := mapKeysSortedBySource(valMap)
+	expectedOrder := []config.Source{config.SourceCodex, config.SourceOpenCode, config.SourcePi, config.SourceOMP}
+	for i, src := range expectedOrder {
+		if i >= len(sorted) || sorted[i] != src {
+			t.Errorf("sorted[%d] = %v, want %v", i, sorted[i], src)
+		}
+	}
+
+	// 3. sourceFromLabel & sourceDisplayName & sourceListText
+	labelTests := []struct {
+		label    string
+		wantSrc  config.Source
+		wantOK   bool
+		wantDisp string
+	}{
+		{"app", config.SourceManaged, true, "app"},
+		{"managed", config.SourceManaged, true, "app"},
+		{"codex", config.SourceCodex, true, "codex"},
+		{"opencode", config.SourceOpenCode, true, "opencode"},
+		{"pi", config.SourcePi, true, "pi"},
+		{"omp", config.SourceOMP, true, "omp"},
+		{"unknown", "", false, "unknown"},
+	}
+	for _, tt := range labelTests {
+		src, ok := sourceFromLabel(tt.label)
+		if ok != tt.wantOK || src != tt.wantSrc {
+			t.Errorf("sourceFromLabel(%q) = (%v, %v), want (%v, %v)", tt.label, src, ok, tt.wantSrc, tt.wantOK)
+		}
+		disp := sourceDisplayName(config.Source(tt.label))
+		if disp != tt.wantDisp {
+			t.Errorf("sourceDisplayName(%q) = %q, want %q", tt.label, disp, tt.wantDisp)
+		}
+	}
+
+	if got := sourceListText(nil); got != "n/a" {
+		t.Errorf("sourceListText(nil) = %q, want n/a", got)
+	}
+	if got := sourceListText([]config.Source{config.SourceCodex, config.SourcePi}); got != "codex, pi" {
+		t.Errorf("sourceListText = %q, want 'codex, pi'", got)
+	}
+
+	// 4. dedupeSources
+	deduped := dedupeSources([]config.Source{config.SourceCodex, config.SourceCodex, "invalid", config.SourcePi})
+	if len(deduped) != 2 {
+		t.Errorf("dedupeSources len = %d, want 2", len(deduped))
+	}
+}
+
+func TestApplyToTargetsCmd_Execution(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
+	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(tmp, "opencode", "auth.json"))
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "pi", "auth.json"))
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "omp", "agent.db"))
+
+	acct := &config.Account{
+		AccessToken:  "tok-apply-cmd",
+		RefreshToken: "ref-apply-cmd",
+		AccountID:    "acc-cmd",
+		Email:        "cmd@example.com",
+		Source:       config.SourceManaged,
+		Writable:     true,
+	}
+
+	// 1. Apply to all targets via command
+	cmd := ApplyToTargetsCmd(acct, []config.Source{config.SourceCodex, config.SourceOpenCode, config.SourcePi, config.SourceOMP})
+	if cmd == nil {
+		t.Fatalf("expected command from ApplyToTargetsCmd")
+	}
+	msg := cmd()
+	if accountsMsg, ok := msg.(AccountsMsg); ok {
+		if len(accountsMsg.Accounts) == 0 {
+			t.Errorf("expected loaded accounts in AccountsMsg")
+		}
+	} else if errMsg, ok := msg.(ErrMsg); ok {
+		t.Errorf("unexpected ErrMsg from ApplyToTargetsCmd: %v", errMsg.Err)
+	}
+
+	// 2. ApplyToTargetsCmd with nil account
+	nilCmd := ApplyToTargetsCmd(nil, []config.Source{config.SourceCodex})
+	if nilCmd != nil {
+		t.Errorf("ApplyToTargetsCmd(nil) should return nil command")
+	}
+
+	// 3. ApplyToTargetsCmd with empty targets
+	emptyCmd := ApplyToTargetsCmd(acct, []config.Source{})
+	msgEmpty := emptyCmd()
+	if errMsg, ok := msgEmpty.(ErrMsg); !ok {
+		t.Errorf("expected ErrMsg for empty targets, got: %T", msgEmpty)
+	} else if !strings.Contains(errMsg.Err.Error(), "no apply target selected") {
+		t.Errorf("expected 'no apply target selected' error, got: %v", errMsg.Err)
+	}
+}
