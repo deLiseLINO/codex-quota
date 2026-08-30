@@ -57,6 +57,8 @@ Typical flow:
 4. Press `o` to apply the active account to selected apps (Codex/OpenCode/Pi/the active OMP account).
 5. Use `r`/`R` to refresh quota and `?` for grouped keyboard help.
 
+> **OMP ownership:** Selecting OMP gives CQ exclusive control of its Codex credential: it keeps one active OMP account and removes the other OMP Codex rows. Your managed account copies remain in CQ for later switching.
+
 ## Controls
 
 - `↑` `↓` `←` `→` — both work for navigation; the UI highlights `↑/↓` in compact view and `←/→` in tabs view

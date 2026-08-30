@@ -188,6 +188,12 @@ func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
 	m := testModelForHotkeys(1)
 	m.startApplyFlow()
 	m.Width = 120
+	m.ApplyTargets = map[config.Source]bool{
+		config.SourceCodex:    true,
+		config.SourceOpenCode: true,
+		config.SourcePi:       false,
+		config.SourceOMP:      false,
+	}
 
 	// 1. Target Selection Modal rendering
 	outSelect := ansi.Strip(m.renderApplyTargetModal())
@@ -218,6 +224,19 @@ func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
 	}
 	if !strings.Contains(outConfirm, "[enter] Confirm") {
 		t.Errorf("expected enter confirmation in modal:\n%s", outConfirm)
+	}
+	if strings.Contains(outConfirm, "OMP: replaces all other Codex accounts.") {
+		t.Errorf("unexpected OMP replacement warning without OMP selected:\n%s", outConfirm)
+	}
+
+	mOMP := m
+	mOMP.ApplyTargets = map[config.Source]bool{
+		config.SourceCodex: true,
+		config.SourceOMP:   true,
+	}
+	outOMPConfirm := ansi.Strip(mOMP.renderApplyConfirmModal())
+	if !strings.Contains(outOMPConfirm, "OMP: replaces all other Codex accounts.") {
+		t.Errorf("expected OMP replacement warning in confirm modal:\n%s", outOMPConfirm)
 	}
 
 	// 4. Confirm Modal rendering with empty selections (fallback)

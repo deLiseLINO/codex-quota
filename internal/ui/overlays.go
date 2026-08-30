@@ -165,17 +165,18 @@ func (m Model) renderApplyTargetModal() string {
 
 func (m Model) renderApplyConfirmModal() string {
 	selected := m.selectedApplyTargets()
-	targetLabel := sourceListText(selected)
 	if len(selected) == 0 {
-		targetLabel = sourceListText(applyTargetsOrdered())
+		selected = applyTargetsOrdered()
 	}
 
-	return renderMessageModal(
-		"Apply account",
-		fmt.Sprintf("Apply this account to: %s?\n[enter] Confirm   [esc] Cancel", targetLabel),
-		WarningStyle,
-		m.Width,
-	)
+	message := fmt.Sprintf("Apply this account to: %s?\n[enter] Confirm   [esc] Cancel", sourceListText(selected))
+	for _, target := range selected {
+		if target == config.SourceOMP {
+			message += "\nOMP: replaces all other Codex accounts."
+			break
+		}
+	}
+	return renderMessageModal("Apply account", message, WarningStyle, m.Width)
 }
 
 func (m Model) renderInfoModal() string {
