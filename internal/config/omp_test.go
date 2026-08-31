@@ -883,6 +883,34 @@ func TestDeleteOMPAccountIDSurvivesSameEmailCollision(t *testing.T) {
 	}
 }
 
+func TestLoadOMPAccountsSkipsMalformedRows(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agent.db")
+	db, err := openOMPDatabase(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO auth_credentials (provider, credential_type, data)
+		VALUES
+			('openai-codex', 'oauth', '{not-json'),
+			('openai-codex', 'oauth', '{"access":"valid-token","accountId":"acc-valid"}')
+	`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	accounts, err := loadOMPAccounts(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 1 || accounts[0].AccountID != "acc-valid" || accounts[0].AccessToken != "valid-token" {
+		t.Fatalf("malformed row should be skipped, got %#v", accounts)
+	}
+}
+
 func TestOpenOMPSQLiteConfiguresEveryConnection(t *testing.T) {
 	db, err := openOMPSQLite(filepath.Join(t.TempDir(), "agent.db"))
 	if err != nil {

@@ -799,15 +799,11 @@ func openOMPDatabase(path string) (*sql.DB, error) {
 }
 
 func openOMPSQLite(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", path+"?_busy_timeout=5000")
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec("PRAGMA busy_timeout = 5000;"); err != nil {
-		db.Close()
-		return nil, err
-	}
 	return db, nil
 }
 
