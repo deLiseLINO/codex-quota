@@ -686,10 +686,15 @@ func applyAccountToOMP(account *Account, mode targetWriteMode) (string, error) {
 	}
 
 	path := ompAgentDbPath()
+	// Refresh follows the database the account was loaded from so a
+	// profile switch between load and save cannot retarget the write.
+	// Apply always targets the active profile database.
+	if mode == targetWriteRefresh && strings.TrimSpace(account.FilePath) != "" {
+		path = account.FilePath
+	}
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("OMP agent.db path is unknown")
 	}
-
 	existingAccounts, err := loadOMPAccounts(path)
 	if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf("failed to load existing accounts from %s: %w", path, err)

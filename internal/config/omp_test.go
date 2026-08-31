@@ -380,6 +380,55 @@ func TestRestoreManagedAccountsToOMP_MirrorsPoolAndPreservesRows(t *testing.T) {
 	}
 }
 
+func TestSaveOMPAccount_RefreshFollowsLoadedDatabaseNotActivePath(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cq"))
+	loadedDB := filepath.Join(tmp, "profileA", "agent.db")
+	activeDB := filepath.Join(tmp, "profileB", "agent.db")
+	t.Setenv("CQ_OMP_DB_PATH", loadedDB)
+
+	// Seed the database the account was loaded from.
+	if err := os.MkdirAll(filepath.Dir(loadedDB), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	seed, err := sql.Open("sqlite", loadedDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = seed.Exec(`
+		CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT, credential_type TEXT, data TEXT, disabled_cause TEXT, identity_key TEXT, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
+		INSERT INTO auth_credentials (id, provider, credential_type, data, identity_key) VALUES (1, 'openai-codex', 'oauth', '{"accountId":"acc-1","access":"old","refresh":"ref-old"}', 'account:acc-1');
+	`)
+	if err != nil {
+		seed.Close()
+		t.Fatal(err)
+	}
+	seed.Close()
+
+	accounts, err := loadOMPAccounts(loadedDB)
+	if err != nil || len(accounts) != 1 {
+		t.Fatalf("load = %v, %v", accounts, err)
+	}
+	loaded := accounts[0]
+	loaded.AccessToken = "tok-refreshed"
+
+	// Active profile switches to a different database between load and save.
+	t.Setenv("CQ_OMP_DB_PATH", activeDB)
+
+	if err := saveOMPAccount(loaded); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+
+	if _, err := os.Stat(activeDB); !os.IsNotExist(err) {
+		t.Fatalf("refresh wrote to the switched-active database %s", activeDB)
+	}
+	refreshed, err := loadOMPAccounts(loadedDB)
+	if err != nil || len(refreshed) != 1 || refreshed[0].AccessToken != "tok-refreshed" {
+		t.Fatalf("source database not refreshed: %v, %v", refreshed, err)
+	}
+}
+
 func TestRestoreManagedAccountsToOMP_RejectsInvalidInputWithoutMutation(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
