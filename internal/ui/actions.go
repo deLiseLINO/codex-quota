@@ -230,11 +230,8 @@ func (m Model) beginApplyFlow() (tea.Model, tea.Cmd) {
 	m.resetDeleteState()
 	m.ShowInfo = false
 	m.Err = nil
-	m.applyTargetOptions = config.InstalledApplyTargets()
-	if !m.startApplyFlow() {
-		m.Notice = "No supported agent harnesses found in PATH"
-		return m, nil
-	}
+	m.refreshApplyTargets()
+	m.startApplyFlow()
 	m.Notice = ""
 	return m, nil
 }
@@ -270,12 +267,31 @@ func (m *Model) resetApplyState() {
 	m.ApplyTargetCursor = 0
 }
 
-func (m *Model) startApplyFlow() bool {
+// refreshApplyTargets re-detects installed harnesses so dim styling and
+// default selection track the live PATH without reopening the modal.
+func (m *Model) refreshApplyTargets() {
+	m.applyTargetOptions = config.SupportedApplyTargets()
+	installed := config.InstalledApplyTargets()
+	installedSet := make(map[config.Source]bool, len(installed))
+	for _, source := range installed {
+		installedSet[source] = true
+	}
+	m.installedTargets = installedSet
+}
+
+// selectInstalledApplyTargets restores the default selection: every
+// installed target, leaving uninstalled ones unchecked.
+func (m *Model) selectInstalledApplyTargets() {
+	if m.ApplyTargets == nil {
+		m.ApplyTargets = map[config.Source]bool{}
+	}
+	for _, source := range m.applyTargetsOrdered() {
+		m.ApplyTargets[source] = m.installedTargets[source]
+	}
+}
+func (m *Model) startApplyFlow() {
 	m.resetApplyState()
 	targets := m.applyTargetsOrdered()
-	if len(targets) == 0 {
-		return false
-	}
 	m.ApplyTargetSelect = true
 	m.ApplyTargets = make(map[config.Source]bool, len(targets))
 	if len(m.lastConfirmedApplyTargets) > 0 {
@@ -284,11 +300,10 @@ func (m *Model) startApplyFlow() bool {
 		}
 	} else {
 		for _, target := range targets {
-			m.ApplyTargets[target] = true
+			m.ApplyTargets[target] = m.installedTargets[target]
 		}
 	}
 	m.ApplyTargetCursor = 0
-	return true
 }
 
 func (m *Model) toggleApplyTargetSelection(source config.Source) {

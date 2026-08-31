@@ -157,7 +157,12 @@ func (m Model) renderApplyTargetModal() string {
 		case config.SourceOMP:
 			label = "Oh My Pi (active account)"
 		}
-		lines = append(lines, InfoValueStyle.Render(fmt.Sprintf("%s [%d] [%s] %s", cursor, i+1, mark, label)))
+		style := InfoValueStyle
+		if !m.installedTargets[target] {
+			label += " (not installed)"
+			style = ApplyTargetUnavailableStyle
+		}
+		lines = append(lines, style.Render(fmt.Sprintf("%s [%d] [%s] %s", cursor, i+1, mark, label)))
 	}
 
 	lines = append(lines, "")

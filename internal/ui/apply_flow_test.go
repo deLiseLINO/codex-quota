@@ -282,86 +282,81 @@ func TestApplyFlow_DefaultSelectionUsesInstalledExecutables(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "pi", "auth.json"), []byte(`{}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "omp"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "omp", "agent.db"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
 	m := testModelForHotkeys(1)
-	m.applyTargetOptions = config.InstalledApplyTargets()
-	if !m.startApplyFlow() {
-		t.Fatal("expected installed targets")
-	}
+	m.refreshApplyTargets()
+	m.startApplyFlow()
 	got := m.selectedApplyTargets()
 	want := []config.Source{config.SourceOpenCode, config.SourceOMP}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("default targets = %v, want %v", got, want)
 	}
-	if _, exists := m.ApplyTargets[config.SourcePi]; exists {
-		t.Fatal("Pi auth file must not make an uninstalled Pi target available")
+	// Uninstalled targets stay visible but unchecked by default.
+	if m.ApplyTargets[config.SourcePi] || m.ApplyTargets[config.SourceCodex] {
+		t.Fatal("uninstalled targets must be unselected by default")
+	}
+	// An auth file alone must not count as installed.
+	if m.installedTargets[config.SourcePi] {
+		t.Fatal("Pi auth file must not make an uninstalled Pi target installed")
 	}
 }
 
-func TestApplyFlow_SubsetControlsModalHotkeysAndSelection(t *testing.T) {
+func TestApplyFlow_UninstalledTargetsAreSelectable(t *testing.T) {
+	forceTrueColor(t)
 	isolateApplyTestEnvironment(t, "opencode", "omp")
 	m := testModelForHotkeys(1)
-	m.applyTargetOptions = config.InstalledApplyTargets()
+	m.refreshApplyTargets()
 	m.startApplyFlow()
-	out := ansi.Strip(m.renderApplyTargetModal())
-	if strings.Contains(out, "Codex app/cli") || strings.Contains(out, "Pi agent") {
-		t.Fatalf("modal contains unavailable targets:\n%s", out)
+	out := m.renderApplyTargetModal()
+	stripped := ansi.Strip(out)
+	for _, label := range []string{"Codex app/cli", "Pi agent", "OpenCode", "Oh My Pi"} {
+		if !strings.Contains(stripped, label) {
+			t.Fatalf("modal omits %s:\n%s", label, stripped)
+		}
 	}
-	if !strings.Contains(out, "OpenCode") || !strings.Contains(out, "Oh My Pi") {
-		t.Fatalf("modal omits installed targets:\n%s", out)
+	if !strings.Contains(stripped, "(not installed)") {
+		t.Fatalf("modal missing not-installed marker:\n%s", stripped)
 	}
-	updated, _ := m.handleApplyTargetSelection("2")
+	// Uninstalled rows use the dim style: distinct from the normal value style.
+	if ApplyTargetUnavailableStyle.Render("x") == InfoValueStyle.Render("x") {
+		t.Fatal("dim style must differ from installed style")
+	}
+	dimPrefix := ApplyTargetUnavailableStyle.Render("Codex app/cli (not installed)")
+	dimText := ansi.Strip(dimPrefix)
+	if dimText == "" || !strings.Contains(stripped, dimText) {
+		t.Fatalf("uninstalled target label missing from modal:\n%s", stripped)
+	}
+	if !strings.Contains(out, "\x1b[38;5;241m") {
+		t.Fatal("uninstalled targets must be dimmed (color 241)")
+	}
+	if !strings.Contains(out, "\x1b[38;5;252m") {
+		t.Fatal("installed targets must keep normal style (color 252)")
+	}
+
+	// Number key on an uninstalled target selects it (user's explicit choice).
+	updated, _ := m.handleApplyTargetSelection("1")
 	m = updated.(Model)
-	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceOpenCode}) {
-		t.Fatalf("key 2 selected targets = %v", got)
+	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceCodex, config.SourceOpenCode, config.SourceOMP}) {
+		t.Fatalf("key 1 selected targets = %v", got)
 	}
-	updated, _ = m.handleApplyTargetSelection("3")
-	m = updated.(Model)
-	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceOpenCode}) {
-		t.Fatalf("hidden numeric target changed selection: %v", got)
-	}
-	m.toggleApplyTargetSelection(config.SourceCodex)
-	if _, exists := m.ApplyTargets[config.SourceCodex]; exists {
-		t.Fatal("hidden Codex target was inserted by toggle")
-	}
+
+	// select-all covers every supported target, installed or not.
 	m.setApplyTargetsAll(true)
-	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceOpenCode, config.SourceOMP}) {
+	if got := m.selectedApplyTargets(); len(got) != 4 {
 		t.Fatalf("select all = %v", got)
 	}
+
 	m.ApplyTargetCursor = 0
 	m.moveApplyTargetCursor(1)
 	if m.ApplyTargetCursor != 1 {
 		t.Fatalf("cursor = %d, want 1", m.ApplyTargetCursor)
 	}
-	m.moveApplyTargetCursor(1)
+	m.moveApplyTargetCursor(3)
 	if m.ApplyTargetCursor != 0 {
 		t.Fatalf("wrapped cursor = %d, want 0", m.ApplyTargetCursor)
 	}
 }
 
-func TestBeginApplyFlowWithNoInstalledHarnessShowsNotice(t *testing.T) {
-	isolateApplyTestEnvironment(t)
-	m := testModelForHotkeys(1)
-	m.applyTargetOptions = config.InstalledApplyTargets()
-	updated, cmd := m.beginApplyFlow()
-	got := updated.(Model)
-	if cmd != nil {
-		t.Fatal("unexpected command")
-	}
-	if got.ApplyTargetSelect || got.ApplyConfirm {
-		t.Fatal("empty apply modal opened")
-	}
-	if got.Notice != "No supported agent harnesses found in PATH" {
-		t.Fatalf("notice = %q", got.Notice)
-	}
-}
-
-func TestApplyFlow_DropsUnavailablePersistedTargets(t *testing.T) {
+func TestApplyFlow_ConfirmedUninstalledTargetsAreRestored(t *testing.T) {
 	isolateApplyTestEnvironment(t, "codex", "pi")
 	account := &config.Account{Key: "acc-1", AccountID: "acc-1", AccessToken: "tok", Source: config.SourceManaged, Writable: true}
 	m := InitialModelWithUIState(
@@ -370,9 +365,11 @@ func TestApplyFlow_DropsUnavailablePersistedTargets(t *testing.T) {
 		nil,
 		config.UIState{LastApplyTargets: []string{"omp", "pi", "opencode"}},
 	)
+	m.refreshApplyTargets()
 	m.startApplyFlow()
-	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourcePi}) {
-		t.Fatalf("persisted installed targets = %v, want [pi]", got)
+	// Persisted selection is restored as confirmed, including uninstalled OMP.
+	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceOpenCode, config.SourcePi, config.SourceOMP}) {
+		t.Fatalf("persisted targets = %v, want [opencode pi omp]", got)
 	}
 }
 
@@ -566,12 +563,18 @@ func TestApplyFlow_KeyHandlingAndCancel(t *testing.T) {
 		t.Errorf("expected all 4 selected on 'a'")
 	}
 
-	// 4. Enter with 0 selected selects all and advances to confirm
+	// 4. Enter with 0 selected falls back to installed targets and advances to confirm
 	m.ApplyTargets = map[config.Source]bool{}
 	updated, _ = m.handleApplyTargetSelection("enter")
 	m = updated.(Model)
-	if !m.ApplyConfirm || len(m.selectedApplyTargets()) != 4 {
-		t.Errorf("expected all selected and advanced to confirm")
+	wantInstalled := 0
+	for _, source := range m.applyTargetsOrdered() {
+		if m.installedTargets[source] {
+			wantInstalled++
+		}
+	}
+	if !m.ApplyConfirm || len(m.selectedApplyTargets()) != wantInstalled {
+		t.Errorf("expected installed targets selected and advanced to confirm")
 	}
 
 	// 5. Esc cancels apply flow

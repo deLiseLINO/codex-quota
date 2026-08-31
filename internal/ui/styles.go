@@ -84,6 +84,9 @@ var (
 	InfoValueStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("252"))
 
+	ApplyTargetUnavailableStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("241"))
+
 	InfoBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("240")).

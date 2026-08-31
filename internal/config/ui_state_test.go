@@ -163,7 +163,6 @@ func TestLoadUIStateOldFormatWithoutPlanTypes(t *testing.T) {
 func TestLoadUIStateApplyTargetsFiltersMalformedValues(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("CQ_CONFIG_HOME", tmp)
-	stubInstalledHarnesses(t, "codex")
 	dir := filepath.Join(tmp, "codex-quota")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -176,17 +175,18 @@ func TestLoadUIStateApplyTargetsFiltersMalformedValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := state.LastApplyTargets; len(got) != 1 || got[0] != "codex" {
-		t.Fatalf("installed targets = %v, want [codex]", got)
+	// Valid targets persist regardless of installation; the UI keeps
+	// uninstalled ones dimmed and unchecked by default.
+	if got := state.LastApplyTargets; len(got) != 2 || got[0] != "codex" || got[1] != "omp" {
+		t.Fatalf("valid targets = %v, want [codex omp]", got)
 	}
 }
 
-func TestSaveUIStateDropsUninstalledTargetsFromJSON(t *testing.T) {
+func TestSaveUIStateKeepsAllValidTargetsInOrder(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
-	stubInstalledHarnesses(t, "opencode", "pi")
-	if err := SaveUIState(UIState{LastApplyTargets: []string{"omp", "pi", "codex", "opencode"}}); err != nil {
+	if err := SaveUIState(UIState{LastApplyTargets: []string{"omp", "unknown", "pi", "codex"}}); err != nil {
 		t.Fatal(err)
 	}
 	path, err := uiStatePath()
@@ -198,29 +198,8 @@ func TestSaveUIStateDropsUninstalledTargetsFromJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	values, ok := root["last_apply_targets"].([]any)
-	if !ok || len(values) != 2 || values[0] != "opencode" || values[1] != "pi" {
+	if !ok || len(values) != 3 || values[0] != "codex" || values[1] != "pi" || values[2] != "omp" {
 		t.Fatalf("saved last_apply_targets = %#v", root["last_apply_targets"])
-	}
-}
-
-func TestSaveUIStateOmitsTargetsWhenNoHarnessIsInstalled(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
-	stubInstalledHarnesses(t)
-	if err := SaveUIState(UIState{LastApplyTargets: []string{"codex", "omp"}}); err != nil {
-		t.Fatal(err)
-	}
-	path, err := uiStatePath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	root, err := readJSONMap(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := root["last_apply_targets"]; exists {
-		t.Fatalf("uninstalled targets persisted: %#v", root["last_apply_targets"])
 	}
 }
 

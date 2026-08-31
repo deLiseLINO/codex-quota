@@ -223,7 +223,7 @@ func (m Model) handleApplyTargetSelection(keyStr string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		if len(m.selectedApplyTargets()) == 0 {
-			m.setApplyTargetsAll(true)
+			m.selectInstalledApplyTargets()
 		}
 		m.ApplyTargetSelect = false
 		m.ApplyConfirm = true
@@ -249,7 +249,7 @@ func (m Model) handleApplyConfirm(keyStr string) (tea.Model, tea.Cmd) {
 
 		targets := m.selectedApplyTargets()
 		if len(targets) == 0 {
-			m.setApplyTargetsAll(true)
+			m.selectInstalledApplyTargets()
 			targets = m.selectedApplyTargets()
 		}
 		m.lastConfirmedApplyTargets = cloneApplyTargets(m.ApplyTargets)
