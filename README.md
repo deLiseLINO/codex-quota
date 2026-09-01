@@ -9,7 +9,7 @@ A TUI for switching between Codex accounts and monitoring quota usage, written i
 ## Features
 
 - Fast account switching across many accounts
-- Multi-target apply: set the active credential for Codex, OpenCode, Pi, and OMP harnesses; uninstalled targets appear dimmed and unselected by default, but remain selectable
+- Multi-target apply across Codex, OpenCode, Pi, and OMP harnesses
 - Accounts loaded from local app storage plus the external Codex, OpenCode, Pi, and active-profile OMP stores
 - OAuth authentication via browser
 - Configurable auto-refresh: the active account refreshes on a short interval, the rest on a longer background interval
@@ -54,7 +54,7 @@ Typical flow:
 1. Press `n` to add/import account via OAuth.
 2. Move between accounts with arrows.
 3. Press `Enter` to open the actions menu for the active account and app-level actions.
-4. Press `o` to apply the active account to selected apps (installed ones are preselected).
+4. Press `o` to apply the active account to selected targets.
 5. Use `r`/`R` to refresh quota and `?` for grouped keyboard help.
 
 ## Controls
