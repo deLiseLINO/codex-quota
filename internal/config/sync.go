@@ -48,10 +48,26 @@ func sameIdentity(left, right *Account) bool {
 	if left == nil || right == nil {
 		return false
 	}
-	leftID := strings.TrimSpace(left.AccountID)
-	rightID := strings.TrimSpace(right.AccountID)
+	// Compare the per-user identity (workspace UUID + user id) rather than the
+	// bare workspace UUID. Two users in the same Team/Business workspace share a
+	// UUID; treating them as the same identity is what lets one user's refresh
+	// silently overwrite another user's tokens in ~/.codex/auth.json.
+	leftID := identityID(left)
+	rightID := identityID(right)
 	if leftID != "" && rightID != "" {
-		return leftID == rightID
+		if leftID == rightID {
+			return true
+		}
+		// If both carry a user id and they differ, they are definitively
+		// different users — do not fall through to the email/refresh heuristics.
+		if strings.TrimSpace(left.UserID) != "" && strings.TrimSpace(right.UserID) != "" {
+			return false
+		}
+		// Same workspace UUID but only one side knows its user id: fall through
+		// to the weaker signals below rather than guessing.
+		if strings.TrimSpace(left.AccountID) != strings.TrimSpace(right.AccountID) {
+			return false
+		}
 	}
 	leftEmail := normalizeEmail(left.Email)
 	rightEmail := normalizeEmail(right.Email)
@@ -97,8 +113,14 @@ func SyncAccountEverywhere(account *Account) error {
 		return nil
 	}
 
+	// Always backfill the per-user id so identity checks downstream
+	// (chooseTargetWriteAccount -> sameIdentity) can distinguish co-workspace
+	// users; the rest is only needed when AccountID was not already resolved.
+	claims := ParseAccessToken(fresh.AccessToken)
+	if strings.TrimSpace(fresh.UserID) == "" {
+		fresh.UserID = claims.UserID
+	}
 	if strings.TrimSpace(fresh.AccountID) == "" {
-		claims := ParseAccessToken(fresh.AccessToken)
 		fresh.AccountID = CanonicalAccountID(fresh.AccountID, claims.AccountID)
 		if fresh.ClientID == "" {
 			fresh.ClientID = claims.ClientID
