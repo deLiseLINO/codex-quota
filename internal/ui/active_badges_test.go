@@ -22,11 +22,59 @@ func TestActiveSourceBadgesForAccount(t *testing.T) {
 	}
 
 	m := InitialModel([]*config.Account{account}, map[string][]string{}, map[string][]string{
-		"account:acc-1": []string{"codex", "opencode"},
+		"account:acc-1": []string{"codex", "opencode", "pi", "omp"},
 	}, false)
 
-	if got := m.activeSourceBadgesForAccount(account); got != "C•O" {
-		t.Fatalf("badges mismatch: got %q, want %q", got, "C•O")
+	if got := m.activeSourceBadgesForAccount(account); got != "C•O•P•M" {
+		t.Fatalf("badges mismatch: got %q, want %q", got, "C•O•P•M")
+	}
+}
+
+func TestActiveSourceBadgesForAccount_PiAndOMP(t *testing.T) {
+	account := &config.Account{
+		Key:       "acc-1",
+		Label:     "user@example.com",
+		Email:     "user@example.com",
+		AccountID: "acc-1",
+		Source:    config.SourceManaged,
+		Writable:  true,
+	}
+
+	m := InitialModel([]*config.Account{account}, map[string][]string{}, map[string][]string{
+		"account:acc-1": []string{"pi", "omp"},
+	}, false)
+
+	if got := m.activeSourceBadgesForAccount(account); got != "P•M" {
+		t.Fatalf("badges mismatch: got %q, want %q", got, "P•M")
+	}
+}
+func TestActiveSourceBadges_OMPMarksOnlyActiveAccount(t *testing.T) {
+	active := &config.Account{
+		Key:       "acc-1",
+		Label:     "active@omp.sh",
+		Email:     "active@omp.sh",
+		AccountID: "acc-1",
+		Source:    config.SourceManaged,
+		Writable:  true,
+	}
+	inactive := &config.Account{
+		Key:       "acc-2",
+		Label:     "inactive@omp.sh",
+		Email:     "inactive@omp.sh",
+		AccountID: "acc-2",
+		Source:    config.SourceManaged,
+		Writable:  true,
+	}
+
+	m := InitialModel([]*config.Account{active, inactive}, map[string][]string{}, map[string][]string{
+		"account:acc-1": []string{"omp"},
+	}, false)
+
+	if got := m.activeSourceBadgesForAccount(active); got != "M" {
+		t.Fatalf("active OMP badge mismatch: got %q, want %q", got, "M")
+	}
+	if got := m.activeSourceBadgesForAccount(inactive); got != "" {
+		t.Fatalf("inactive account should have no OMP badge, got %q", got)
 	}
 }
 

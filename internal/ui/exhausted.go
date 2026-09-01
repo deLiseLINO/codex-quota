@@ -120,5 +120,6 @@ func (m Model) uiStateSnapshot() config.UIState {
 		ExhaustedAccountKeys: m.exhaustedStickyKeys(),
 		ActiveAccountKey:     activeKey,
 		PlanTypes:            planTypes,
+		LastApplyTargets:     m.applyTargetStrings(),
 	}
 }

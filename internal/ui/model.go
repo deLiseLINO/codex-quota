@@ -14,60 +14,64 @@ import (
 )
 
 type Model struct {
-	defaultProgress         progress.Model
-	shortProgress           progress.Model
-	Data                    api.UsageData
-	Loading                 bool
-	DeleteSourceSelect      bool
-	DeleteSourceOptions     []config.Source
-	DeleteSources           map[config.Source]bool
-	DeleteSourceCursor      int
-	DeleteConfirm           bool
-	ApplyTargetSelect       bool
-	ApplyTargets            map[config.Source]bool
-	ApplyTargetCursor       int
-	ApplyConfirm            bool
-	HelpVisible             bool
-	ActionMenuVisible       bool
-	ActionMenuCursor        int
-	SettingsVisible         bool
-	Settings                config.Settings
-	settingsCursor          int
-	settingsDraft           int
-	settingsDraftActive     bool
-	AddAccountLoginVisible  bool
-	AddAccountLoginURL      string
-	AddAccountBrowserFailed bool
-	AddAccountLoginStatus   string
-	ShowInfo                bool
-	Notice                  string
-	noticeSeq               int
-	Err                     error
-	Width                   int
-	Height                  int
-	CompactMode             bool
-	UsageData               map[string]api.UsageData
-	PlanTypeByAccount       map[string]string
-	LoadingMap              map[string]bool
-	ErrorsMap               map[string]error
-	ExhaustedSticky         map[string]bool
-	lastRefresh             map[string]time.Time
-	refreshScheduled        map[string]bool
-	silentRefresh           map[string]bool
-	Accounts                []*config.Account
-	SourcesByAccountID      map[string][]string
-	ActiveSourcesByIdentity map[string][]string
-	ActiveAccountIx         int
-	compactBarAnimations    map[string]compactBarAnimation
-	tabWindowAnimations     map[string]tabWindowAnimation
-	animationTicking        bool
-	UpdatePromptVisible     bool
-	UpdatePromptVersion     string
-	UpdatePromptMethod      update.Method
-	UpdatePromptCursor      int
-	UpdateAvailableHint     string
-	pendingUpdateMethod     update.Method
-	hasPendingUpdateMethod  bool
+	defaultProgress           progress.Model
+	shortProgress             progress.Model
+	Data                      api.UsageData
+	Loading                   bool
+	DeleteSourceSelect        bool
+	DeleteSourceOptions       []config.Source
+	DeleteSources             map[config.Source]bool
+	DeleteSourceCursor        int
+	DeleteConfirm             bool
+	ApplyTargetSelect         bool
+	ApplyTargets              map[config.Source]bool
+	ApplyTargetCursor         int
+	ApplyConfirm              bool
+	lastConfirmedApplyTargets map[config.Source]bool
+	applyTargetOptions        []config.Source
+	installedTargets          map[config.Source]bool
+	OMPRestoreConfirm         bool
+	HelpVisible               bool
+	ActionMenuVisible         bool
+	ActionMenuCursor          int
+	SettingsVisible           bool
+	Settings                  config.Settings
+	settingsCursor            int
+	settingsDraft             int
+	settingsDraftActive       bool
+	AddAccountLoginVisible    bool
+	AddAccountLoginURL        string
+	AddAccountBrowserFailed   bool
+	AddAccountLoginStatus     string
+	ShowInfo                  bool
+	Notice                    string
+	noticeSeq                 int
+	Err                       error
+	Width                     int
+	Height                    int
+	CompactMode               bool
+	UsageData                 map[string]api.UsageData
+	PlanTypeByAccount         map[string]string
+	LoadingMap                map[string]bool
+	ErrorsMap                 map[string]error
+	ExhaustedSticky           map[string]bool
+	lastRefresh               map[string]time.Time
+	refreshScheduled          map[string]bool
+	silentRefresh             map[string]bool
+	Accounts                  []*config.Account
+	SourcesByAccountID        map[string][]string
+	ActiveSourcesByIdentity   map[string][]string
+	ActiveAccountIx           int
+	compactBarAnimations      map[string]compactBarAnimation
+	tabWindowAnimations       map[string]tabWindowAnimation
+	animationTicking          bool
+	UpdatePromptVisible       bool
+	UpdatePromptVersion       string
+	UpdatePromptMethod        update.Method
+	UpdatePromptCursor        int
+	UpdateAvailableHint       string
+	pendingUpdateMethod       update.Method
+	hasPendingUpdateMethod    bool
 }
 
 type StartupUpdatePrompt struct {
@@ -132,28 +136,37 @@ func InitialModelWithSettingsAndStartupUpdate(
 		progress.WithGradient("#4285F4", "#34A853"),
 		progress.WithoutPercentage(),
 	)
+	applyTargetOptions := config.SupportedApplyTargets()
+	installed := config.InstalledApplyTargets()
+	installedSet := make(map[config.Source]bool, len(installed))
+	for _, source := range installed {
+		installedSet[source] = true
+	}
 
 	m := Model{
-		defaultProgress:         defaultProgress,
-		shortProgress:           shortProgress,
-		Loading:                 len(accounts) > 0,
-		Accounts:                nil,
-		SourcesByAccountID:      sourcesByAccountID,
-		ActiveSourcesByIdentity: activeSourcesByIdentity,
-		ActiveAccountIx:         0,
-		CompactMode:             uiState.CompactMode,
-		UsageData:               make(map[string]api.UsageData),
-		PlanTypeByAccount:       make(map[string]string),
-		LoadingMap:              make(map[string]bool),
-		ErrorsMap:               make(map[string]error),
-		ExhaustedSticky:         make(map[string]bool),
-		lastRefresh:             make(map[string]time.Time),
-		refreshScheduled:        make(map[string]bool),
-		silentRefresh:           make(map[string]bool),
-		compactBarAnimations:    make(map[string]compactBarAnimation),
-		tabWindowAnimations:     make(map[string]tabWindowAnimation),
-		UpdatePromptCursor:      0,
-		Settings:                settings,
+		defaultProgress:           defaultProgress,
+		shortProgress:             shortProgress,
+		Loading:                   len(accounts) > 0,
+		Accounts:                  nil,
+		SourcesByAccountID:        sourcesByAccountID,
+		ActiveSourcesByIdentity:   activeSourcesByIdentity,
+		ActiveAccountIx:           0,
+		CompactMode:               uiState.CompactMode,
+		lastConfirmedApplyTargets: applyTargetsFromState(uiState.LastApplyTargets, applyTargetOptions),
+		applyTargetOptions:        applyTargetOptions,
+		installedTargets:          installedSet,
+		UsageData:                 make(map[string]api.UsageData),
+		PlanTypeByAccount:         make(map[string]string),
+		LoadingMap:                make(map[string]bool),
+		ErrorsMap:                 make(map[string]error),
+		ExhaustedSticky:           make(map[string]bool),
+		lastRefresh:               make(map[string]time.Time),
+		refreshScheduled:          make(map[string]bool),
+		silentRefresh:             make(map[string]bool),
+		compactBarAnimations:      make(map[string]compactBarAnimation),
+		tabWindowAnimations:       make(map[string]tabWindowAnimation),
+		UpdatePromptCursor:        0,
+		Settings:                  settings,
 	}
 	m.Accounts = accounts
 	if startupUpdate != nil {
@@ -234,6 +247,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.ApplyConfirm {
 			return m.handleApplyConfirm(keyStr)
+		}
+		if m.OMPRestoreConfirm {
+			return m.handleOMPRestoreConfirm(keyStr)
 		}
 
 		switch keyStr {

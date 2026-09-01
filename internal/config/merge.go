@@ -93,6 +93,10 @@ func accountPriority(account *Account) int {
 		score += 60
 	case SourceCodex:
 		score += 50
+	case SourcePi:
+		score += 40
+	case SourceOMP:
+		score += 30
 	}
 
 	if account.RefreshToken != "" {

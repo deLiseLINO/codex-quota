@@ -11,6 +11,8 @@ const (
 	SourceManaged  Source = "managed"
 	SourceOpenCode Source = "opencode"
 	SourceCodex    Source = "codex"
+	SourcePi       Source = "pi"
+	SourceOMP      Source = "omp"
 )
 
 type Account struct {
@@ -49,6 +51,10 @@ func (a *Account) SourceLabel() string {
 		return "opencode"
 	case SourceCodex:
 		return "codex"
+	case SourcePi:
+		return "pi"
+	case SourceOMP:
+		return "omp"
 	default:
 		return "unknown"
 	}
@@ -80,6 +86,16 @@ func SaveAccount(account *Account) error {
 			return nil
 		}
 		return saveCodexAccount(account)
+	case SourcePi:
+		if account.FilePath == "" {
+			return nil
+		}
+		return savePiAccount(account)
+	case SourceOMP:
+		if account.FilePath == "" {
+			return nil
+		}
+		return saveOMPAccount(account)
 	default:
 		return nil
 	}
@@ -101,6 +117,10 @@ func ApplyAccountToTarget(account *Account, target Source) (string, error) {
 		return ApplyAccountToOpenCode(accountToApply)
 	case SourceCodex:
 		return ApplyAccountToCodex(accountToApply)
+	case SourcePi:
+		return ApplyAccountToPi(accountToApply)
+	case SourceOMP:
+		return ApplyAccountToOMP(accountToApply)
 	default:
 		return "", fmt.Errorf("unsupported apply target: %s", target)
 	}
@@ -117,7 +137,7 @@ func ApplyAccountToTargets(account *Account, targets []Source) (map[Source]strin
 
 	seen := make(map[Source]bool, len(targets))
 	for _, target := range targets {
-		if target != SourceCodex && target != SourceOpenCode {
+		if target != SourceCodex && target != SourceOpenCode && target != SourcePi && target != SourceOMP {
 			continue
 		}
 		if seen[target] {
@@ -148,6 +168,10 @@ func DeleteAccountFromSource(account *Account, source Source) error {
 		return DeleteOpenCodeAuthAccount()
 	case SourceCodex:
 		return DeleteCodexAuthAccount()
+	case SourcePi:
+		return DeletePiAuthAccount(account)
+	case SourceOMP:
+		return DeleteOMPAuthAccount(account)
 	default:
 		return fmt.Errorf("unsupported source: %s", source)
 	}

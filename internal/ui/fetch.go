@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -169,6 +170,51 @@ func ApplyToTargetsCmd(account *config.Account, targets []config.Source) tea.Cmd
 			SourcesByAccountID:      result.SourcesByAccountID,
 			ActiveSourcesByIdentity: result.ActiveSourcesByIdentity,
 			Notice:                  note,
+		}
+	}
+}
+
+func ApplyToTargetsWithPreferenceCmd(applyCmd tea.Cmd, preferenceErr error) tea.Cmd {
+	if applyCmd == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		msg := applyCmd()
+		if preferenceErr == nil {
+			return msg
+		}
+		switch result := msg.(type) {
+		case AccountsMsg:
+			result.Notice = strings.TrimSpace(result.Notice + " (apply target preference was not saved)")
+			return result
+		case NoticeMsg:
+			result.Text = strings.TrimSpace(result.Text + " (apply target preference was not saved)")
+			return result
+		case ErrMsg:
+			result.Err = errors.Join(result.Err, fmt.Errorf("apply target preference was not saved: %w", preferenceErr))
+			return result
+		}
+		return NoticeMsg{Text: fmt.Sprintf("apply target preference was not saved: %v", preferenceErr)}
+	}
+}
+
+func RestoreOMPAccountsCmd(activeKey string) tea.Cmd {
+	return func() tea.Msg {
+		count, path, err := config.RestoreManagedAccountsToOMP()
+		if err != nil {
+			return ErrMsg{Err: fmt.Errorf("failed to restore OMP pool: %w", err)}
+		}
+		result, err := config.LoadAllAccountsWithSources()
+		if err != nil {
+			return ErrMsg{Err: fmt.Errorf("failed to reload accounts: %w", err)}
+		}
+		activeKey = strings.TrimSpace(activeKey)
+		return AccountsMsg{
+			ActiveKey:               activeKey,
+			Accounts:                result.Accounts,
+			SourcesByAccountID:      result.SourcesByAccountID,
+			ActiveSourcesByIdentity: result.ActiveSourcesByIdentity,
+			Notice:                  fmt.Sprintf("restored %d OMP accounts: %s", count, filepath.Base(path)),
 		}
 	}
 }

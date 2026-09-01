@@ -201,6 +201,7 @@ func TestMouseClickOnAddAccountLoginURLTriggersOpen(t *testing.T) {
 }
 
 func TestApplyHotkeyOpensApplyFlow(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex")
 	m := testModelForHotkeys(1)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
@@ -215,6 +216,7 @@ func TestApplyHotkeyOpensApplyFlow(t *testing.T) {
 }
 
 func TestActionMenuApplyOpensApplyFlow(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex")
 	m := testModelForHotkeys(1)
 	m.ActionMenuVisible = true
 	m.ActionMenuCursor = 0
@@ -253,6 +255,27 @@ func TestActionMenuRefreshAllTriggersBulkRefresh(t *testing.T) {
 	}
 	if len(got.LoadingMap) != 3 {
 		t.Fatalf("expected three loading accounts scheduled, got %d entries", len(got.LoadingMap))
+	}
+}
+
+func TestOMPRestoreMenuShortcutConfirmAndCancel(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.ActionMenuVisible = true
+	updated, _ := m.handleActionMenu("p")
+	m = updated.(Model)
+	if !m.OMPRestoreConfirm || m.ActionMenuVisible {
+		t.Fatal("expected OMP restore confirmation from menu shortcut")
+	}
+	updated, _ = m.handleOMPRestoreConfirm("esc")
+	m = updated.(Model)
+	if m.OMPRestoreConfirm {
+		t.Fatal("expected restore cancellation")
+	}
+	m.OMPRestoreConfirm = true
+	updated, cmd := m.handleOMPRestoreConfirm("enter")
+	m = updated.(Model)
+	if m.OMPRestoreConfirm || cmd == nil || !m.Loading {
+		t.Fatal("expected restore command to start")
 	}
 }
 
@@ -513,6 +536,7 @@ func testModelForHotkeys(count int) Model {
 		})
 	}
 	m := InitialModel(accounts, map[string][]string{}, map[string][]string{}, false)
+	m.applyTargetOptions = config.SupportedApplyTargets()
 	m.Loading = false
 	return m
 }

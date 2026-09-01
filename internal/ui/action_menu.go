@@ -9,14 +9,15 @@ import (
 )
 
 const (
-	actionMenuApply      = "apply"
-	actionMenuRefresh    = "refresh"
-	actionMenuRefreshAll = "refresh_all"
-	actionMenuInfo       = "info"
-	actionMenuAdd        = "add"
-	actionMenuView       = "view"
-	actionMenuDelete     = "delete"
-	actionMenuUpdate     = "update"
+	actionMenuApply          = "apply"
+	actionMenuRefresh        = "refresh"
+	actionMenuRefreshAll     = "refresh_all"
+	actionMenuInfo           = "info"
+	actionMenuAdd            = "add"
+	actionMenuView           = "view"
+	actionMenuDelete         = "delete"
+	actionMenuUpdate         = "update"
+	actionMenuRestoreOMPPool = "restore_omp_pool"
 )
 
 type actionMenuItem struct {
@@ -35,7 +36,7 @@ func (m Model) actionMenuSections() []actionMenuSection {
 		{
 			Title: "Current account",
 			Items: []actionMenuItem{
-				{ID: actionMenuApply, Label: "Apply to Codex/OpenCode", Shortcut: "o"},
+				{ID: actionMenuApply, Label: "Apply to apps", Shortcut: "o"},
 				{ID: actionMenuRefresh, Label: "Refresh quota", Shortcut: "r"},
 				{ID: actionMenuInfo, Label: "Account details", Shortcut: "i"},
 				{ID: actionMenuDelete, Label: "Delete account", Shortcut: "x"},
@@ -47,6 +48,7 @@ func (m Model) actionMenuSections() []actionMenuSection {
 				{ID: actionMenuRefreshAll, Label: "Refresh all", Shortcut: "R"},
 				{ID: actionMenuAdd, Label: "Add account", Shortcut: "n"},
 				{ID: actionMenuView, Label: "Switch view", Shortcut: "v"},
+				{ID: actionMenuRestoreOMPPool, Label: "Restore all accounts to OMP pool", Shortcut: "p"},
 			},
 		},
 	}

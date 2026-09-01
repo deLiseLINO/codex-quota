@@ -42,6 +42,11 @@ func (m Model) confirmActionMenu() (tea.Model, tea.Cmd) {
 		return m.toggleViewMode()
 	case actionMenuDelete:
 		return m.beginDeleteFlow()
+	case actionMenuRestoreOMPPool:
+		m.OMPRestoreConfirm = true
+		m.Err = nil
+		m.Notice = ""
+		return m, nil
 	case actionMenuUpdate:
 		if !m.openUpdatePrompt() {
 			return m, nil
@@ -56,6 +61,7 @@ func (m *Model) openHelpOverlay() {
 	m.resetActionMenuState()
 	m.resetDeleteState()
 	m.resetApplyState()
+	m.OMPRestoreConfirm = false
 	m.ShowInfo = false
 	m.Notice = ""
 	m.Err = nil
@@ -72,6 +78,7 @@ func (m *Model) openActionMenu() {
 	m.resetApplyState()
 	m.ShowInfo = false
 	m.Notice = ""
+	m.OMPRestoreConfirm = false
 	m.Err = nil
 	m.ActionMenuVisible = true
 	m.ActionMenuCursor = 0
@@ -80,6 +87,7 @@ func (m *Model) openActionMenu() {
 func (m *Model) resetActionMenuState() {
 	m.ActionMenuVisible = false
 	m.ActionMenuCursor = 0
+	m.OMPRestoreConfirm = false
 }
 
 func (m *Model) openUpdatePrompt() bool {
@@ -220,10 +228,11 @@ func (m Model) beginApplyFlow() (tea.Model, tea.Cmd) {
 	m.resetHelpState()
 	m.resetActionMenuState()
 	m.resetDeleteState()
-	m.startApplyFlow()
 	m.ShowInfo = false
-	m.Notice = ""
 	m.Err = nil
+	m.refreshApplyTargets()
+	m.startApplyFlow()
+	m.Notice = ""
 	return m, nil
 }
 
@@ -252,23 +261,60 @@ func (m *Model) resetDeleteState() {
 
 func (m *Model) resetApplyState() {
 	m.ApplyTargetSelect = false
+	m.OMPRestoreConfirm = false
 	m.ApplyConfirm = false
 	m.ApplyTargets = nil
 	m.ApplyTargetCursor = 0
 }
 
+// refreshApplyTargets re-detects installed harnesses so dim styling and
+// default selection track the live PATH without reopening the modal.
+func (m *Model) refreshApplyTargets() {
+	m.applyTargetOptions = config.SupportedApplyTargets()
+	installed := config.InstalledApplyTargets()
+	installedSet := make(map[config.Source]bool, len(installed))
+	for _, source := range installed {
+		installedSet[source] = true
+	}
+	m.installedTargets = installedSet
+}
+
+// selectInstalledApplyTargets restores the default selection: every
+// installed target, leaving uninstalled ones unchecked.
+func (m *Model) selectInstalledApplyTargets() {
+	if m.ApplyTargets == nil {
+		m.ApplyTargets = map[config.Source]bool{}
+	}
+	for _, source := range m.applyTargetsOrdered() {
+		m.ApplyTargets[source] = m.installedTargets[source]
+	}
+}
 func (m *Model) startApplyFlow() {
 	m.resetApplyState()
+	targets := m.applyTargetsOrdered()
 	m.ApplyTargetSelect = true
-	m.ApplyTargets = map[config.Source]bool{
-		config.SourceCodex:    true,
-		config.SourceOpenCode: true,
+	m.ApplyTargets = make(map[config.Source]bool, len(targets))
+	if len(m.lastConfirmedApplyTargets) > 0 {
+		for _, target := range targets {
+			m.ApplyTargets[target] = m.lastConfirmedApplyTargets[target]
+		}
+	} else {
+		for _, target := range targets {
+			m.ApplyTargets[target] = m.installedTargets[target]
+		}
 	}
 	m.ApplyTargetCursor = 0
 }
 
 func (m *Model) toggleApplyTargetSelection(source config.Source) {
-	if source != config.SourceCodex && source != config.SourceOpenCode {
+	available := false
+	for _, target := range m.applyTargetsOrdered() {
+		if source == target {
+			available = true
+			break
+		}
+	}
+	if !available {
 		return
 	}
 	if m.ApplyTargets == nil {
@@ -281,7 +327,7 @@ func (m *Model) toggleApplyTargetSelection(source config.Source) {
 }
 
 func (m *Model) toggleCurrentApplyTargetSelection() {
-	targets := applyTargetsOrdered()
+	targets := m.applyTargetsOrdered()
 	if len(targets) == 0 {
 		return
 	}
@@ -292,26 +338,61 @@ func (m *Model) toggleCurrentApplyTargetSelection() {
 }
 
 func (m *Model) moveApplyTargetCursor(delta int) {
-	targets := applyTargetsOrdered()
+	targets := m.applyTargetsOrdered()
 	if len(targets) == 0 {
 		m.ApplyTargetCursor = 0
 		return
 	}
-	m.ApplyTargetCursor = (m.ApplyTargetCursor + delta + len(targets)) % len(targets)
+	n := len(targets)
+	m.ApplyTargetCursor = ((m.ApplyTargetCursor+delta)%n + n) % n
 }
-
 func (m *Model) setApplyTargetsAll(selected bool) {
 	if m.ApplyTargets == nil {
 		m.ApplyTargets = map[config.Source]bool{}
 	}
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range m.applyTargetsOrdered() {
 		m.ApplyTargets[source] = selected
 	}
 }
 
+func cloneApplyTargets(targets map[config.Source]bool) map[config.Source]bool {
+	clone := make(map[config.Source]bool, len(targets))
+	for source, selected := range targets {
+		clone[source] = selected
+	}
+	return clone
+}
+
+func applyTargetsFromState(values []string, available []config.Source) map[config.Source]bool {
+	requested := make(map[config.Source]bool, len(values))
+	for _, value := range values {
+		requested[config.Source(value)] = true
+	}
+	targets := make(map[config.Source]bool, len(available))
+	for _, source := range available {
+		if requested[source] {
+			targets[source] = true
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	return targets
+}
+
+func (m Model) applyTargetStrings() []string {
+	targets := make([]string, 0, len(m.lastConfirmedApplyTargets))
+	for _, source := range m.applyTargetsOrdered() {
+		if m.lastConfirmedApplyTargets[source] {
+			targets = append(targets, string(source))
+		}
+	}
+	return targets
+}
+
 func (m Model) selectedApplyTargets() []config.Source {
 	targets := make([]config.Source, 0, 2)
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range m.applyTargetsOrdered() {
 		if m.ApplyTargets != nil && m.ApplyTargets[source] {
 			targets = append(targets, source)
 		}
@@ -321,7 +402,7 @@ func (m Model) selectedApplyTargets() []config.Source {
 
 func (m Model) selectedApplyTargetCount() int {
 	count := 0
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range m.applyTargetsOrdered() {
 		if m.ApplyTargets != nil && m.ApplyTargets[source] {
 			count++
 		}
@@ -329,21 +410,21 @@ func (m Model) selectedApplyTargetCount() int {
 	return count
 }
 
-func applyTargetsOrdered() []config.Source {
-	return []config.Source{config.SourceCodex, config.SourceOpenCode}
+func (m Model) applyTargetsOrdered() []config.Source {
+	return append([]config.Source(nil), m.applyTargetOptions...)
 }
 
 func dedupeApplyTargets(targets []config.Source) []config.Source {
 	seen := map[config.Source]bool{}
 	for _, target := range targets {
-		if target != config.SourceCodex && target != config.SourceOpenCode {
+		if target != config.SourceCodex && target != config.SourceOpenCode && target != config.SourcePi && target != config.SourceOMP {
 			continue
 		}
 		seen[target] = true
 	}
 
 	output := make([]config.Source, 0, len(seen))
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range config.SupportedApplyTargets() {
 		if seen[source] {
 			output = append(output, source)
 		}
@@ -364,7 +445,7 @@ func formatTargetErrors(errorsByTarget map[config.Source]error) string {
 		return ""
 	}
 	parts := make([]string, 0, len(errorsByTarget))
-	for _, source := range applyTargetsOrdered() {
+	for _, source := range config.SupportedApplyTargets() {
 		err, ok := errorsByTarget[source]
 		if !ok || err == nil {
 			continue
@@ -433,7 +514,7 @@ func orderedSources(sourceMap map[config.Source]bool) []config.Source {
 		return nil
 	}
 
-	ordered := []config.Source{config.SourceManaged, config.SourceOpenCode, config.SourceCodex}
+	ordered := []config.Source{config.SourceManaged, config.SourceOpenCode, config.SourceCodex, config.SourcePi, config.SourceOMP}
 	out := make([]config.Source, 0, len(sourceMap))
 	for _, source := range ordered {
 		if sourceMap[source] {
@@ -451,6 +532,10 @@ func sourceFromLabel(label string) (config.Source, bool) {
 		return config.SourceOpenCode, true
 	case "codex":
 		return config.SourceCodex, true
+	case "pi":
+		return config.SourcePi, true
+	case "omp":
+		return config.SourceOMP, true
 	default:
 		return "", false
 	}
@@ -459,7 +544,7 @@ func sourceFromLabel(label string) (config.Source, bool) {
 func dedupeSources(sources []config.Source) []config.Source {
 	seen := make(map[config.Source]bool, len(sources))
 	for _, source := range sources {
-		if source != config.SourceManaged && source != config.SourceOpenCode && source != config.SourceCodex {
+		if source != config.SourceManaged && source != config.SourceOpenCode && source != config.SourceCodex && source != config.SourcePi && source != config.SourceOMP {
 			continue
 		}
 		seen[source] = true
@@ -475,6 +560,10 @@ func sourceDisplayName(source config.Source) string {
 		return "opencode"
 	case config.SourceCodex:
 		return "codex"
+	case config.SourcePi:
+		return "pi"
+	case config.SourceOMP:
+		return "omp"
 	default:
 		return string(source)
 	}

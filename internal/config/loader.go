@@ -1,6 +1,7 @@
 package config
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
@@ -40,12 +43,44 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 	if codexAccount != nil {
 		externalAccounts = append(externalAccounts, codexAccount)
 	}
-
 	activeOpenCodeAccount, err := loadOpenCodeAccountFile(opencodeAuthPath(), SourceOpenCode, true)
 	if err != nil {
 		return AccountsLoadResult{}, err
 	}
 
+	piPaths := piAuthPaths()
+	piWritable := firstExistingPath(piPaths)
+	if piWritable == "" && len(piPaths) > 0 {
+		piWritable = piPaths[0]
+	}
+	for _, path := range piPaths {
+		piMain, err := loadPiAccountFile(path, SourcePi, path == piWritable)
+		if err != nil {
+			return AccountsLoadResult{}, err
+		}
+		if piMain != nil {
+			externalAccounts = append(externalAccounts, piMain)
+		}
+	}
+	activePiAccount, err := loadPiAccountFile(piAuthPath(), SourcePi, true)
+	if err != nil {
+		return AccountsLoadResult{}, err
+	}
+
+	ompPaths := ompAgentDbPaths()
+	for _, path := range ompPaths {
+		ompAccounts, err := loadOMPAccounts(path)
+		if err != nil {
+			return AccountsLoadResult{}, err
+		}
+		if len(ompAccounts) > 0 {
+			externalAccounts = append(externalAccounts, ompAccounts...)
+		}
+	}
+	activeOMPAccounts, err := loadOMPAccounts(ompAgentDbPath())
+	if err != nil {
+		return AccountsLoadResult{}, err
+	}
 	if syncExternalAccountsToManaged(appAccounts, externalAccounts) {
 		refreshedManaged, reloadErr := LoadManagedAccounts()
 		if reloadErr == nil {
@@ -74,7 +109,10 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 	activeSourcesByIdentity := make(map[string][]string)
 	appendActiveSource(activeSourcesByIdentity, codexAccount, SourceCodex)
 	appendActiveSource(activeSourcesByIdentity, activeOpenCodeAccount, SourceOpenCode)
-
+	appendActiveSource(activeSourcesByIdentity, activePiAccount, SourcePi)
+	for _, account := range activeOMPAccounts {
+		appendActiveSource(activeSourcesByIdentity, account, SourceOMP)
+	}
 	accounts = dedupeAccounts(accounts)
 	for _, account := range accounts {
 		finalizeAccount(account)
@@ -95,7 +133,7 @@ func appendActiveSource(target map[string][]string, account *Account, source Sou
 	if target == nil || account == nil {
 		return
 	}
-	if source != SourceCodex && source != SourceOpenCode {
+	if source != SourceCodex && source != SourceOpenCode && source != SourcePi && source != SourceOMP {
 		return
 	}
 
@@ -380,6 +418,187 @@ func saveCodexAccount(account *Account) error {
 	root["last_refresh"] = time.Now().UTC().Format(time.RFC3339)
 
 	return writeJSONMap(account.FilePath, root)
+}
+func loadPiAccountFile(path string, source Source, writable bool) (*Account, error) {
+	root, err := readJSONMap(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	// Upstream Pi stores ChatGPT Codex OAuth exclusively under "openai-codex".
+	// We strictly inspect "openai-codex" with type "oauth" to avoid conflating with static "openai" API keys.
+	codexCred := asMap(root["openai-codex"])
+	if codexCred == nil {
+		return nil, nil
+	}
+
+	account := buildPiAccount(codexCred, source, path, writable)
+	if account == nil {
+		return nil, nil
+	}
+
+	return account, nil
+}
+
+func buildPiAccount(cred map[string]any, source Source, path string, writable bool) *Account {
+	credType := strings.TrimSpace(asString(cred["type"]))
+	if credType != "" && credType != "oauth" {
+		return nil
+	}
+
+	accessToken := strings.TrimSpace(asString(cred["access"]))
+	if accessToken == "" {
+		return nil
+	}
+	account := &Account{
+		AccessToken:  accessToken,
+		RefreshToken: strings.TrimSpace(asString(cred["refresh"])),
+		AccountID:    strings.TrimSpace(asString(cred["accountId"])),
+		Email:        strings.TrimSpace(asString(cred["email"])),
+		Source:       source,
+		FilePath:     path,
+		Writable:     writable,
+	}
+
+	if expiresMillis, ok := asInt64(cred["expires"]); ok && expiresMillis > 0 {
+		account.ExpiresAt = time.UnixMilli(expiresMillis)
+	}
+
+	claims := ParseAccessToken(accessToken)
+	account.AccountID = CanonicalAccountID(account.AccountID, claims.AccountID)
+	if account.ClientID == "" {
+		account.ClientID = claims.ClientID
+	}
+	if account.ExpiresAt.IsZero() {
+		account.ExpiresAt = claims.ExpiresAt
+	}
+	if account.Email == "" {
+		account.Email = claims.Email
+	}
+
+	return account
+}
+
+func savePiAccount(account *Account) error {
+	root, err := readJSONMap(account.FilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", account.FilePath, err)
+	}
+
+	codexObj := asMap(root["openai-codex"])
+	if codexObj == nil {
+		codexObj = make(map[string]any)
+		root["openai-codex"] = codexObj
+	}
+
+	codexObj["type"] = "oauth"
+	codexObj["access"] = account.AccessToken
+	if account.RefreshToken != "" {
+		codexObj["refresh"] = account.RefreshToken
+	}
+	if account.AccountID != "" {
+		codexObj["accountId"] = account.AccountID
+	}
+	if account.Email != "" {
+		codexObj["email"] = account.Email
+	}
+	if !account.ExpiresAt.IsZero() {
+		codexObj["expires"] = account.ExpiresAt.UnixMilli()
+	}
+
+	return writeJSONMap(account.FilePath, root)
+}
+
+func loadOMPAccounts(dbPath string) ([]*Account, error) {
+	if _, err := os.Stat(dbPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to stat OMP database %s: %w", dbPath, err)
+	}
+
+	db, err := openOMPSQLite(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open OMP database %s: %w", dbPath, err)
+	}
+	defer db.Close()
+
+	var tableExists int
+	err = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='auth_credentials'").Scan(&tableExists)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect OMP database schema in %s: %w", dbPath, err)
+	}
+	if tableExists == 0 {
+		return nil, nil
+	}
+
+	rows, err := db.Query("SELECT id, data, identity_key FROM auth_credentials WHERE provider = 'openai-codex' AND (disabled_cause IS NULL OR disabled_cause = '') ORDER BY id ASC")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query auth_credentials in %s: %w", dbPath, err)
+	}
+	defer rows.Close()
+
+	accounts := make([]*Account, 0)
+	for rows.Next() {
+		var id int64
+		var dataStr string
+		var identityKey sql.NullString
+		if err := rows.Scan(&id, &dataStr, &identityKey); err != nil {
+			return nil, fmt.Errorf("failed to scan auth_credentials row in %s: %w", dbPath, err)
+		}
+
+		var dataMap map[string]any
+		if err := json.Unmarshal([]byte(dataStr), &dataMap); err != nil {
+			continue
+		}
+
+		accessToken := strings.TrimSpace(asString(dataMap["access"]))
+		if accessToken == "" {
+			continue
+		}
+
+		account := &Account{
+			AccessToken:  accessToken,
+			RefreshToken: strings.TrimSpace(asString(dataMap["refresh"])),
+			AccountID:    strings.TrimSpace(asString(dataMap["accountId"])),
+			Email:        strings.TrimSpace(asString(dataMap["email"])),
+			Source:       SourceOMP,
+			FilePath:     dbPath,
+			Writable:     true,
+		}
+
+		if expiresMillis, ok := asInt64(dataMap["expires"]); ok && expiresMillis > 0 {
+			account.ExpiresAt = time.UnixMilli(expiresMillis)
+		}
+
+		claims := ParseAccessToken(accessToken)
+		account.AccountID = CanonicalAccountID(account.AccountID, claims.AccountID)
+		if account.ClientID == "" {
+			account.ClientID = claims.ClientID
+		}
+		if account.ExpiresAt.IsZero() {
+			account.ExpiresAt = claims.ExpiresAt
+		}
+		if account.Email == "" {
+			account.Email = claims.Email
+		}
+
+		accounts = append(accounts, account)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error reading auth_credentials rows in %s: %w", dbPath, err)
+	}
+
+	return accounts, nil
+}
+
+func saveOMPAccount(account *Account) error {
+	_, err := applyAccountToOMP(account, targetWriteRefresh)
+	return err
 }
 
 // codexIDToken falls back to the access token when the account has no id_token,

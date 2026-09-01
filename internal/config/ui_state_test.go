@@ -9,12 +9,14 @@ import (
 func TestUIStateRoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("CQ_CONFIG_HOME", tmp)
+	stubInstalledHarnesses(t, "codex", "omp")
 
 	initial := UIState{
 		CompactMode:          true,
 		ExhaustedAccountKeys: []string{"managed:1", "codex:2"},
 		AccountOrderKeys:     []string{"acc-2", "acc-1"},
 		ActiveAccountKey:     "managed:2",
+		LastApplyTargets:     []string{"codex", "omp"},
 	}
 	if err := SaveUIState(initial); err != nil {
 		t.Fatalf("save ui state: %v", err)
@@ -45,6 +47,25 @@ func TestUIStateRoundTrip(t *testing.T) {
 	}
 	if loaded.ActiveAccountKey != initial.ActiveAccountKey {
 		t.Fatalf("active account key mismatch: got %q, want %q", loaded.ActiveAccountKey, initial.ActiveAccountKey)
+	}
+	if got := loaded.LastApplyTargets; len(got) != 2 || got[0] != "codex" || got[1] != "omp" {
+		t.Fatalf("apply targets mismatch: %v", got)
+	}
+}
+
+func TestSaveUIStateApplyTargetsUsesDeterministicValidOrder(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", tmp)
+	stubInstalledHarnesses(t, "codex", "omp")
+	if err := SaveUIState(UIState{LastApplyTargets: []string{"omp", "unknown", "codex", "omp"}}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := state.LastApplyTargets; len(got) != 2 || got[0] != "codex" || got[1] != "omp" {
+		t.Fatalf("deterministic targets = %v", got)
 	}
 }
 
@@ -137,6 +158,67 @@ func TestLoadUIStateOldFormatWithoutPlanTypes(t *testing.T) {
 	if len(loaded.PlanTypes) != 0 {
 		t.Fatalf("expected empty plan types for old format, got %d", len(loaded.PlanTypes))
 	}
+}
+
+func TestLoadUIStateApplyTargetsFiltersMalformedValues(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CQ_CONFIG_HOME", tmp)
+	dir := filepath.Join(tmp, "codex-quota")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "ui_state.json")
+	if err := os.WriteFile(path, []byte(`{"last_apply_targets":[" codex ","omp","codex","",4]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Valid targets persist regardless of installation; the UI keeps
+	// uninstalled ones dimmed and unchecked by default.
+	if got := state.LastApplyTargets; len(got) != 2 || got[0] != "codex" || got[1] != "omp" {
+		t.Fatalf("valid targets = %v, want [codex omp]", got)
+	}
+}
+
+func TestSaveUIStateKeepsAllValidTargetsInOrder(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	if err := SaveUIState(UIState{LastApplyTargets: []string{"omp", "unknown", "pi", "codex"}}); err != nil {
+		t.Fatal(err)
+	}
+	path, err := uiStatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := readJSONMap(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, ok := root["last_apply_targets"].([]any)
+	if !ok || len(values) != 3 || values[0] != "codex" || values[1] != "pi" || values[2] != "omp" {
+		t.Fatalf("saved last_apply_targets = %#v", root["last_apply_targets"])
+	}
+}
+
+func stubInstalledHarnesses(t *testing.T, commands ...string) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("HOME", filepath.Join(dir, "home"))
+	t.Setenv("CODEX_HOME", filepath.Join(dir, "codex"))
+	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(dir, "opencode", "auth.json"))
+	t.Setenv("OPENCODE_DATA_DIR", filepath.Join(dir, "opencode-data"))
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(dir, "pi", "auth.json"))
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(dir, "omp", "agent.db"))
+	for _, command := range commands {
+		path := filepath.Join(dir, command)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir)
 }
 
 func TestLoadUIStateOldFormatWithoutExhaustedKeys(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/deLiseLINO/codex-quota/internal/config"
 )
@@ -48,6 +49,9 @@ func (m Model) currentOverlayModal() string {
 
 	if m.ApplyConfirm {
 		return m.renderApplyConfirmModal()
+	}
+	if m.OMPRestoreConfirm {
+		return m.renderOMPRestoreConfirmModal()
 	}
 
 	if m.Err != nil {
@@ -128,7 +132,7 @@ func (m Model) renderDeleteConfirmModal() string {
 }
 
 func (m Model) renderApplyTargetModal() string {
-	targets := applyTargetsOrdered()
+	targets := m.applyTargetsOrdered()
 
 	lines := []string{
 		WarningStyle.Render("Apply account"),
@@ -145,29 +149,49 @@ func (m Model) renderApplyTargetModal() string {
 			mark = "x"
 		}
 		label := "Codex app/cli"
-		if target == config.SourceOpenCode {
+		switch target {
+		case config.SourceOpenCode:
 			label = "OpenCode"
+		case config.SourcePi:
+			label = "Pi agent"
+		case config.SourceOMP:
+			label = "Oh My Pi (active account)"
 		}
-		lines = append(lines, InfoValueStyle.Render(fmt.Sprintf("%s [%d] [%s] %s", cursor, i+1, mark, label)))
+		style := InfoValueStyle
+		if !m.installedTargets[target] {
+			label += " (not installed)"
+			style = ApplyTargetUnavailableStyle
+		}
+		lines = append(lines, style.Render(fmt.Sprintf("%s [%d] [%s] %s", cursor, i+1, mark, label)))
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, InfoValueStyle.Render("[↑/↓] Move   [space] Toggle   [enter] Next   [esc] Cancel"))
+	lines = append(lines, InfoValueStyle.Render("[↑/↓] Move   [space] Toggle   [a] Select all   [enter] Next   [esc] Cancel"))
 
 	content := strings.Join(lines, "\n")
-	return InfoBoxStyle.Copy().Width(68).Render(content)
+	return InfoBoxStyle.Copy().Width(modalWidthForLines(lines, 68)).Render(content)
 }
 
 func (m Model) renderApplyConfirmModal() string {
 	selected := m.selectedApplyTargets()
-	targetLabel := sourceListText(selected)
 	if len(selected) == 0 {
-		targetLabel = "codex, opencode"
+		selected = m.applyTargetsOrdered()
 	}
 
+	message := fmt.Sprintf("Apply this account to: %s?\n[enter] Confirm   [esc] Cancel", sourceListText(selected))
+	for _, target := range selected {
+		if target == config.SourceOMP {
+			message += "\nOMP: replaces all other Codex accounts."
+			break
+		}
+	}
+	return renderMessageModal("Apply account", message, WarningStyle, m.Width)
+}
+
+func (m Model) renderOMPRestoreConfirmModal() string {
 	return renderMessageModal(
-		"Apply account",
-		fmt.Sprintf("Apply this account to: %s?\n[enter] Confirm   [esc] Cancel", targetLabel),
+		"Restore OMP pool",
+		"Restore all CQ accounts to OMP?\nRe-enables OMP auto-balancing; CQ copies stay.\n[enter] Restore   [esc] Cancel",
 		WarningStyle,
 		m.Width,
 	)
@@ -241,7 +265,8 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine("Enter", "Open account menu"),
 		renderHelpLine("r", "Refresh active account"),
 		renderHelpLine("R", "Refresh all accounts"),
-		renderHelpLine("o", "Apply to Codex/OpenCode"),
+		renderHelpLine("o", "Apply to installed apps"),
+		renderHelpLine("Enter → p", "Restore CQ accounts to the OMP pool"),
 		renderHelpLine("n", "Add account"),
 		renderHelpLine("x", "Delete account"),
 		renderHelpLine("i", "Account info"),
@@ -255,7 +280,17 @@ func (m Model) renderHelpModal() string {
 		renderHelpLine("q", "Quit"),
 		"",
 	}
-	return InfoBoxStyle.Copy().Width(56).Render(strings.Join(lines, "\n"))
+	return InfoBoxStyle.Copy().Width(modalWidthForLines(lines, 56)).Render(strings.Join(lines, "\n"))
+}
+
+func modalWidthForLines(lines []string, minimum int) int {
+	width := minimum
+	for _, line := range lines {
+		if candidate := ansi.StringWidth(line) + 2; candidate > width {
+			width = candidate
+		}
+	}
+	return width
 }
 
 func (m Model) renderAddAccountLoginModal() string {

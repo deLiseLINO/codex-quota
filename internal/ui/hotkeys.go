@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/deLiseLINO/codex-quota/internal/api"
+	"github.com/deLiseLINO/codex-quota/internal/config"
 )
 
 func normalizeKey(key string) string {
@@ -149,6 +150,12 @@ func (m Model) handleActionMenu(keyStr string) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	for index, item := range items {
+		if keyStr == item.Shortcut {
+			m.ActionMenuCursor = index
+			return m.confirmActionMenu()
+		}
+	}
 	return m, nil
 }
 
@@ -203,20 +210,20 @@ func (m Model) handleApplyTargetSelection(keyStr string) (tea.Model, tea.Cmd) {
 	case " ":
 		m.toggleCurrentApplyTargetSelection()
 		return m, nil
-	case "1":
-		m.ApplyTargetCursor = 0
-		m.toggleCurrentApplyTargetSelection()
-		return m, nil
-	case "2":
-		m.ApplyTargetCursor = 1
-		m.toggleCurrentApplyTargetSelection()
+	case "1", "2", "3", "4":
+		idx := int(keyStr[0] - '1')
+		targets := m.applyTargetsOrdered()
+		if idx >= 0 && idx < len(targets) {
+			m.ApplyTargetCursor = idx
+			m.toggleCurrentApplyTargetSelection()
+		}
 		return m, nil
 	case "a":
 		m.setApplyTargetsAll(true)
 		return m, nil
 	case "enter":
 		if len(m.selectedApplyTargets()) == 0 {
-			m.setApplyTargetsAll(true)
+			m.selectInstalledApplyTargets()
 		}
 		m.ApplyTargetSelect = false
 		m.ApplyConfirm = true
@@ -240,18 +247,40 @@ func (m Model) handleApplyConfirm(keyStr string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		targets := m.selectedApplyTargets()
+		if len(targets) == 0 {
+			m.selectInstalledApplyTargets()
+			targets = m.selectedApplyTargets()
+		}
+		m.lastConfirmedApplyTargets = cloneApplyTargets(m.ApplyTargets)
 		m.Loading = true
 		m.Err = nil
 		m.resetDeleteState()
 		m.ShowInfo = false
 		m.Notice = ""
-		targets := m.selectedApplyTargets()
-		if len(targets) == 0 {
-			targets = applyTargetsOrdered()
-		}
+		state := m.uiStateSnapshot()
+		preferenceErr := config.SaveUIState(state)
+		applyCmd := ApplyToTargetsCmd(account, targets)
 		m.resetApplyState()
-		return m, ApplyToTargetsCmd(account, targets)
+		return m, ApplyToTargetsWithPreferenceCmd(applyCmd, preferenceErr)
 	}
 
+	return m, nil
+}
+
+func (m Model) handleOMPRestoreConfirm(keyStr string) (tea.Model, tea.Cmd) {
+	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.OMPRestoreConfirm = false
+		return m, nil
+	case "enter":
+		m.OMPRestoreConfirm = false
+		m.Loading = true
+		m.Err = nil
+		m.Notice = ""
+		return m, RestoreOMPAccountsCmd(m.activeAccountKey())
+	}
 	return m, nil
 }

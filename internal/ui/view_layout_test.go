@@ -402,6 +402,7 @@ func TestViewKeepsFooterWhenActionMenuIsOpen(t *testing.T) {
 }
 
 func TestViewKeepsFooterWhenApplyModalIsOpen(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex")
 	model := testModelWithWindows([]api.QuotaWindow{
 		{
 			Label:       "Weekly usage limit",

@@ -1,0 +1,934 @@
+package ui
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/deLiseLINO/codex-quota/internal/config"
+)
+
+func TestApplyFlow_CursorMovementAndClamping(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+
+	// Initial cursor is 0
+	if m.ApplyTargetCursor != 0 {
+		t.Fatalf("expected cursor 0, got %d", m.ApplyTargetCursor)
+	}
+
+	// Move down
+	m.moveApplyTargetCursor(1)
+	if m.ApplyTargetCursor != 1 {
+		t.Fatalf("expected cursor 1, got %d", m.ApplyTargetCursor)
+	}
+
+	m.moveApplyTargetCursor(1)
+	if m.ApplyTargetCursor != 2 {
+		t.Fatalf("expected cursor 2, got %d", m.ApplyTargetCursor)
+	}
+
+	m.moveApplyTargetCursor(1)
+	if m.ApplyTargetCursor != 3 {
+		t.Fatalf("expected cursor 3, got %d", m.ApplyTargetCursor)
+	}
+
+	// Move down past end (should wrap to 0)
+	m.moveApplyTargetCursor(1)
+	if m.ApplyTargetCursor != 0 {
+		t.Fatalf("expected cursor wrap to 0, got %d", m.ApplyTargetCursor)
+	}
+
+	// Move up from 0 (should wrap to last index 3)
+	m.moveApplyTargetCursor(-1)
+	if m.ApplyTargetCursor != 3 {
+		t.Fatalf("expected cursor wrap to 3, got %d", m.ApplyTargetCursor)
+	}
+
+	// Move with large delta (modulo behavior)
+	m.moveApplyTargetCursor(10) // 3 + 10 = 13 % 4 = 1
+	if m.ApplyTargetCursor != 1 {
+		t.Fatalf("expected cursor 1 after delta 10, got %d", m.ApplyTargetCursor)
+	}
+	m.moveApplyTargetCursor(-9) // 1 - 9 = -8 % 4 = 0
+	if m.ApplyTargetCursor != 0 {
+		t.Fatalf("expected cursor 0 after delta -9, got %d", m.ApplyTargetCursor)
+	}
+}
+
+func TestApplyFlow_ToggleAndMinOneInvariant(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+
+	// 1. Unsupported source is a safe no-op
+	m.toggleApplyTargetSelection("unsupported")
+
+	// 2. Nil map initializes
+	m.ApplyTargets = nil
+	m.toggleApplyTargetSelection(config.SourcePi)
+	if !m.ApplyTargets[config.SourcePi] {
+		t.Errorf("expected Pi initialized to true from nil map")
+	}
+
+	// Set initial state
+	m.ApplyTargets = map[config.Source]bool{
+		config.SourceCodex:    true,
+		config.SourceOpenCode: true,
+		config.SourcePi:       false,
+		config.SourceOMP:      false,
+	}
+
+	// Toggle Pi on (cursor at index 2)
+	m.ApplyTargetCursor = 2
+	m.toggleCurrentApplyTargetSelection()
+	if !m.ApplyTargets[config.SourcePi] {
+		t.Errorf("expected Pi toggled to true")
+	}
+
+	// Toggle Codex off (cursor at index 0)
+	m.ApplyTargetCursor = 0
+	m.toggleCurrentApplyTargetSelection()
+	if m.ApplyTargets[config.SourceCodex] {
+		t.Errorf("expected Codex toggled to false")
+	}
+
+	// Toggle OpenCode off (cursor at index 1) -> now only Pi is true (count = 1)
+	m.ApplyTargetCursor = 1
+	m.toggleCurrentApplyTargetSelection()
+	if m.ApplyTargets[config.SourceOpenCode] {
+		t.Errorf("expected OpenCode toggled to false")
+	}
+
+	// Min-one selection invariant: trying to toggle the last remaining target (Pi) off must be blocked!
+	m.ApplyTargetCursor = 2
+	m.toggleCurrentApplyTargetSelection()
+	if !m.ApplyTargets[config.SourcePi] {
+		t.Errorf("min-one invariant violated: last remaining target was toggled off!")
+	}
+
+	// Out-of-bounds cursor clamps to 0
+	m.ApplyTargetCursor = -5
+	m.toggleCurrentApplyTargetSelection()
+	if m.ApplyTargetCursor != 0 {
+		t.Errorf("expected cursor clamped to 0 from -5, got %d", m.ApplyTargetCursor)
+	}
+
+	m.ApplyTargetCursor = 100
+	m.toggleCurrentApplyTargetSelection()
+	if m.ApplyTargetCursor != 0 {
+		t.Errorf("expected cursor clamped to 0 from 100, got %d", m.ApplyTargetCursor)
+	}
+
+	// setApplyTargetsAll from nil
+	m.ApplyTargets = nil
+	m.setApplyTargetsAll(true)
+	if len(m.selectedApplyTargets()) != 4 {
+		t.Errorf("expected all 4 targets selected after setApplyTargetsAll(true)")
+	}
+	m.setApplyTargetsAll(false)
+	if len(m.selectedApplyTargets()) != 0 {
+		t.Errorf("expected 0 targets selected after setApplyTargetsAll(false)")
+	}
+}
+
+func TestApplyFlow_NumberKeyShortcuts(t *testing.T) {
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+
+	// Initial targets: set all false except Codex
+	m.ApplyTargets = map[config.Source]bool{
+		config.SourceCodex:    true,
+		config.SourceOpenCode: false,
+		config.SourcePi:       false,
+		config.SourceOMP:      false,
+	}
+
+	// Press '1' to toggle Codex off/on when multiple selected
+	m.ApplyTargets[config.SourceOpenCode] = true
+	updated, _ := m.handleApplyTargetSelection("1")
+	m = updated.(Model)
+	if m.ApplyTargets[config.SourceCodex] {
+		t.Errorf("pressing '1' should toggle Codex to false")
+	}
+
+	// Press '2' to toggle OpenCode
+	updated, _ = m.handleApplyTargetSelection("2")
+	m = updated.(Model)
+	// Min-one prevents toggling off last remaining
+	if !m.ApplyTargets[config.SourceOpenCode] {
+		t.Errorf("min-one invariant should keep OpenCode true")
+	}
+
+	// Press '3' to toggle Pi
+	updated, _ = m.handleApplyTargetSelection("3")
+	m = updated.(Model)
+	if !m.ApplyTargets[config.SourcePi] {
+		t.Errorf("pressing '3' should toggle Pi to true")
+	}
+
+	// Press '4' to toggle OMP
+	updated, _ = m.handleApplyTargetSelection("4")
+	m = updated.(Model)
+	if !m.ApplyTargets[config.SourceOMP] {
+		t.Errorf("pressing '4' should toggle OMP to true")
+	}
+
+	// Press invalid numeric keys (e.g. '5', '9')
+	updated, _ = m.handleApplyTargetSelection("5")
+	m = updated.(Model)
+	updated, _ = m.handleApplyTargetSelection("9")
+	m = updated.(Model)
+	updated, _ = m.handleApplyTargetSelection("unrecognized")
+	m = updated.(Model)
+}
+
+func TestApplyFlow_ModalRenderingAndConfirmation(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+	m.Width = 120
+	m.ApplyTargets = map[config.Source]bool{
+		config.SourceCodex:    true,
+		config.SourceOpenCode: true,
+		config.SourcePi:       false,
+		config.SourceOMP:      false,
+	}
+
+	// 1. Target Selection Modal rendering
+	outSelect := ansi.Strip(m.renderApplyTargetModal())
+	if !strings.Contains(outSelect, "Codex app/cli") {
+		t.Errorf("expected Codex in apply modal:\n%s", outSelect)
+	}
+	if !strings.Contains(outSelect, "OpenCode") {
+		t.Errorf("expected OpenCode in apply modal:\n%s", outSelect)
+	}
+	if !strings.Contains(outSelect, "[a] Select all") {
+		t.Errorf("expected select-all hint in apply modal:\n%s", outSelect)
+	}
+	if !strings.Contains(outSelect, "Pi agent") {
+		t.Errorf("expected Pi agent in apply modal:\n%s", outSelect)
+	}
+	if !strings.Contains(outSelect, "Oh My Pi (active account)") {
+		t.Errorf("expected active Oh My Pi account in apply modal:\n%s", outSelect)
+	}
+
+	// 2. Press enter to go to Confirm modal
+	updated, _ := m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	if m.ApplyTargetSelect || !m.ApplyConfirm {
+		t.Fatalf("expected transition to ApplyConfirm modal")
+	}
+
+	// 3. Confirm Modal rendering with explicit selections
+	outConfirm := ansi.Strip(m.renderApplyConfirmModal())
+	if !strings.Contains(outConfirm, "Apply this account to:") {
+		t.Errorf("expected confirm prompt in modal:\n%s", outConfirm)
+	}
+	if !strings.Contains(outConfirm, "[enter] Confirm") {
+		t.Errorf("expected enter confirmation in modal:\n%s", outConfirm)
+	}
+	if strings.Contains(outConfirm, "OMP: replaces all other Codex accounts.") {
+		t.Errorf("unexpected OMP replacement warning without OMP selected:\n%s", outConfirm)
+	}
+
+	mOMP := m
+	mOMP.ApplyTargets = map[config.Source]bool{
+		config.SourceCodex: true,
+		config.SourceOMP:   true,
+	}
+	outOMPConfirm := ansi.Strip(mOMP.renderApplyConfirmModal())
+	if !strings.Contains(outOMPConfirm, "OMP: replaces all other Codex accounts.") {
+		t.Errorf("expected OMP replacement warning in confirm modal:\n%s", outOMPConfirm)
+	}
+
+	// 4. Confirm Modal rendering with empty selections (fallback)
+	mEmpty := m
+	mEmpty.ApplyTargets = map[config.Source]bool{}
+	outFallback := ansi.Strip(mEmpty.renderApplyConfirmModal())
+	if !strings.Contains(outFallback, "codex, opencode, pi, omp") {
+		t.Errorf("expected fallback labels in confirm modal with empty selections:\n%s", outFallback)
+	}
+
+	// 5. Press enter to confirm -> executes ApplyToTargetsCmd and closes modal
+	updated, cmd := m.handleApplyConfirm("enter")
+	m = updated.(Model)
+	if m.ApplyConfirm || m.ApplyTargetSelect {
+		t.Errorf("modal should be closed after confirmation")
+	}
+	if cmd == nil {
+		t.Errorf("expected ApplyToTargetsCmd command returned on confirm")
+	}
+
+	// 6. Confirm when ApplyTargets is empty falls back to all targets
+	mFallbackConfirm := testModelForHotkeys(1)
+	mFallbackConfirm.startApplyFlow()
+	mFallbackConfirm.ApplyTargets = nil
+	mFallbackConfirm.ApplyConfirm = true
+	updated, cmd = mFallbackConfirm.handleApplyConfirm("enter")
+	if cmd == nil {
+		t.Errorf("expected ApplyToTargetsCmd command returned with fallback targets")
+	}
+}
+
+func TestApplyFlow_DefaultSelectionUsesInstalledExecutables(t *testing.T) {
+	root := isolateApplyTestEnvironment(t, "opencode", "omp")
+	if err := os.WriteFile(filepath.Join(root, "pi", "auth.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := testModelForHotkeys(1)
+	m.refreshApplyTargets()
+	m.startApplyFlow()
+	got := m.selectedApplyTargets()
+	want := []config.Source{config.SourceOpenCode, config.SourceOMP}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("default targets = %v, want %v", got, want)
+	}
+	// Uninstalled targets stay visible but unchecked by default.
+	if m.ApplyTargets[config.SourcePi] || m.ApplyTargets[config.SourceCodex] {
+		t.Fatal("uninstalled targets must be unselected by default")
+	}
+	// An auth file alone must not count as installed.
+	if m.installedTargets[config.SourcePi] {
+		t.Fatal("Pi auth file must not make an uninstalled Pi target installed")
+	}
+}
+
+func TestApplyFlow_UninstalledTargetsAreSelectable(t *testing.T) {
+	forceTrueColor(t)
+	isolateApplyTestEnvironment(t, "opencode", "omp")
+	m := testModelForHotkeys(1)
+	m.refreshApplyTargets()
+	m.startApplyFlow()
+	out := m.renderApplyTargetModal()
+	stripped := ansi.Strip(out)
+	for _, label := range []string{"Codex app/cli", "Pi agent", "OpenCode", "Oh My Pi"} {
+		if !strings.Contains(stripped, label) {
+			t.Fatalf("modal omits %s:\n%s", label, stripped)
+		}
+	}
+	if !strings.Contains(stripped, "(not installed)") {
+		t.Fatalf("modal missing not-installed marker:\n%s", stripped)
+	}
+	// Uninstalled rows use the dim style: distinct from the normal value style.
+	if ApplyTargetUnavailableStyle.Render("x") == InfoValueStyle.Render("x") {
+		t.Fatal("dim style must differ from installed style")
+	}
+	dimPrefix := ApplyTargetUnavailableStyle.Render("Codex app/cli (not installed)")
+	dimText := ansi.Strip(dimPrefix)
+	if dimText == "" || !strings.Contains(stripped, dimText) {
+		t.Fatalf("uninstalled target label missing from modal:\n%s", stripped)
+	}
+	if !strings.Contains(out, "\x1b[38;5;241m") {
+		t.Fatal("uninstalled targets must be dimmed (color 241)")
+	}
+	if !strings.Contains(out, "\x1b[38;5;252m") {
+		t.Fatal("installed targets must keep normal style (color 252)")
+	}
+
+	// Number key on an uninstalled target selects it (user's explicit choice).
+	updated, _ := m.handleApplyTargetSelection("1")
+	m = updated.(Model)
+	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceCodex, config.SourceOpenCode, config.SourceOMP}) {
+		t.Fatalf("key 1 selected targets = %v", got)
+	}
+
+	// select-all covers every supported target, installed or not.
+	m.setApplyTargetsAll(true)
+	if got := m.selectedApplyTargets(); len(got) != 4 {
+		t.Fatalf("select all = %v", got)
+	}
+
+	m.ApplyTargetCursor = 0
+	m.moveApplyTargetCursor(1)
+	if m.ApplyTargetCursor != 1 {
+		t.Fatalf("cursor = %d, want 1", m.ApplyTargetCursor)
+	}
+	m.moveApplyTargetCursor(3)
+	if m.ApplyTargetCursor != 0 {
+		t.Fatalf("wrapped cursor = %d, want 0", m.ApplyTargetCursor)
+	}
+}
+
+func TestApplyFlow_ConfirmedUninstalledTargetsAreRestored(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex", "pi")
+	account := &config.Account{Key: "acc-1", AccountID: "acc-1", AccessToken: "tok", Source: config.SourceManaged, Writable: true}
+	m := InitialModelWithUIState(
+		[]*config.Account{account},
+		nil,
+		nil,
+		config.UIState{LastApplyTargets: []string{"omp", "pi", "opencode"}},
+	)
+	m.refreshApplyTargets()
+	m.startApplyFlow()
+	// Persisted selection is restored as confirmed, including uninstalled OMP.
+	if got := m.selectedApplyTargets(); !reflect.DeepEqual(got, []config.Source{config.SourceOpenCode, config.SourcePi, config.SourceOMP}) {
+		t.Fatalf("persisted targets = %v, want [opencode pi omp]", got)
+	}
+}
+
+func TestApplyFlow_RemembersConfirmedTargetsForSession(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+	m.ApplyTargets = map[config.Source]bool{config.SourceCodex: true}
+	updated, _ := m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	updated, cmd := m.handleApplyConfirm("enter")
+	m = updated.(Model)
+	updated, _ = m.Update(ErrMsg{Err: assertErr("apply failed")})
+	m = updated.(Model)
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 1 || got[0] != config.SourceCodex {
+		t.Fatalf("failed apply should retain confirmed intent: %v", got)
+	}
+	if cmd == nil || len(m.lastConfirmedApplyTargets) != 1 || !m.lastConfirmedApplyTargets[config.SourceCodex] {
+		t.Fatal("expected Codex-only confirmation to be remembered")
+	}
+
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 1 || got[0] != config.SourceCodex {
+		t.Fatalf("reopened targets = %v, want Codex only", got)
+	}
+	m.ApplyTargets[config.SourceOpenCode] = true
+	if m.lastConfirmedApplyTargets[config.SourceOpenCode] {
+		t.Fatal("current apply map aliased remembered targets")
+	}
+	updated, _ = m.handleApplyTargetSelection("esc")
+	m = updated.(Model)
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 1 || got[0] != config.SourceCodex {
+		t.Fatalf("cancelled edits overwrote remembered targets: %v", got)
+	}
+
+	updated, _ = m.handleApplyTargetSelection("a")
+	m = updated.(Model)
+	if len(m.selectedApplyTargets()) != 4 {
+		t.Fatal("select all should leave all targets selected")
+	}
+	updated, _ = m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	updated, cmd = m.handleApplyConfirm("enter")
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected all-target apply command")
+	}
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 4 {
+		t.Fatalf("reconfirmed all targets were not remembered: %v", got)
+	}
+
+	fresh := testModelForHotkeys(1)
+	fresh.startApplyFlow()
+	if fresh.lastConfirmedApplyTargets != nil {
+		t.Fatal("new model should not remember session targets")
+	}
+}
+
+func TestApplyFlow_LoadsPersistedTargetsSafely(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex", "omp")
+	account := &config.Account{Key: "acc-1", AccountID: "acc-1", AccessToken: "tok", Source: config.SourceManaged, Writable: true}
+	m := InitialModelWithUIState(
+		[]*config.Account{account},
+		nil,
+		nil,
+		config.UIState{LastApplyTargets: []string{"omp", "unknown", "codex", "omp"}},
+	)
+	m.startApplyFlow()
+	if got := m.selectedApplyTargets(); len(got) != 2 || got[0] != config.SourceCodex || got[1] != config.SourceOMP {
+		t.Fatalf("persisted targets = %v", got)
+	}
+	if got := m.applyTargetStrings(); !reflect.DeepEqual(got, []string{"codex", "omp"}) {
+		t.Fatalf("persisted targets were not normalized deterministically: %v", got)
+	}
+}
+
+func TestApplyFlow_PersistsConfirmedTargetsAcrossRestart(t *testing.T) {
+	isolateApplyTestEnvironment(t, "codex", "opencode", "pi", "omp")
+	m := testModelForHotkeys(1)
+	m.lastConfirmedApplyTargets = map[config.Source]bool{config.SourceCodex: true}
+	if err := config.SaveUIState(m.uiStateSnapshot()); err != nil {
+		t.Fatal(err)
+	}
+	state, err := config.LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := InitialModelWithUIState(m.Accounts, nil, nil, state)
+	next.startApplyFlow()
+	if got := next.selectedApplyTargets(); len(got) != 1 || got[0] != config.SourceCodex {
+		t.Fatalf("restart did not restore Codex-only target: %v", got)
+	}
+	next.setApplyTargetsAll(true)
+	next.lastConfirmedApplyTargets = cloneApplyTargets(next.ApplyTargets)
+	if err := config.SaveUIState(next.uiStateSnapshot()); err != nil {
+		t.Fatal(err)
+	}
+	state, err = config.LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted := InitialModelWithUIState(m.Accounts, nil, nil, state)
+	restarted.startApplyFlow()
+	if got := restarted.selectedApplyTargets(); len(got) != 4 {
+		t.Fatalf("all-target preference did not replace saved selection: %v", got)
+	}
+}
+
+func TestApplyTargetUIStateSaveFailureIsNonDestructive(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	blocked := filepath.Join(tmp, "blocked")
+	if err := os.WriteFile(blocked, []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CQ_CONFIG_HOME", blocked)
+	if err := config.SaveUIState(config.UIState{LastApplyTargets: []string{"codex"}}); err == nil {
+		t.Fatal("expected UI-state save failure")
+	}
+}
+
+func TestApplyFlow_ConfirmedTargetsPersistBeforeApplyResult(t *testing.T) {
+	tmp := isolateApplyTestEnvironment(t, "codex")
+	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+	m.ApplyTargets = map[config.Source]bool{config.SourceCodex: true}
+	updated, _ := m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	updated, cmd := m.handleApplyConfirm("enter")
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected apply command")
+	}
+	_ = cmd()
+	state, err := config.LoadUIState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := state.LastApplyTargets; len(got) != 1 || got[0] != "codex" {
+		t.Fatalf("confirmed target was not persisted: %v", got)
+	}
+}
+func TestApplyFlow_KeyHandlingAndCancel(t *testing.T) {
+
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+
+	// 1. Up and Down keys move cursor
+	updated, _ := m.handleApplyTargetSelection("up")
+	m = updated.(Model)
+	if m.ApplyTargetCursor != 3 {
+		t.Errorf("up arrow cursor = %d, want 3", m.ApplyTargetCursor)
+	}
+
+	updated, _ = m.handleApplyTargetSelection("down")
+	m = updated.(Model)
+	if m.ApplyTargetCursor != 0 {
+		t.Errorf("down arrow cursor = %d, want 0", m.ApplyTargetCursor)
+	}
+
+	updated, _ = m.handleApplyTargetSelection("k")
+	m = updated.(Model)
+	if m.ApplyTargetCursor != 3 {
+		t.Errorf("k key cursor = %d, want 3", m.ApplyTargetCursor)
+	}
+
+	updated, _ = m.handleApplyTargetSelection("j")
+	m = updated.(Model)
+	if m.ApplyTargetCursor != 0 {
+		t.Errorf("j key cursor = %d, want 0", m.ApplyTargetCursor)
+	}
+
+	// 2. Space key toggles current cursor selection
+	wasSelected := m.ApplyTargets[config.SourceCodex]
+	updated, _ = m.handleApplyTargetSelection(" ")
+	m = updated.(Model)
+	if m.ApplyTargets[config.SourceCodex] == wasSelected {
+		t.Errorf("space should toggle selection")
+	}
+
+	// 3. 'a' toggles all targets
+	updated, _ = m.handleApplyTargetSelection("a")
+	m = updated.(Model)
+	if len(m.selectedApplyTargets()) != 4 {
+		t.Errorf("expected all 4 selected on 'a'")
+	}
+
+	// 4. Enter with 0 selected falls back to installed targets and advances to confirm
+	m.ApplyTargets = map[config.Source]bool{}
+	updated, _ = m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	wantInstalled := 0
+	for _, source := range m.applyTargetsOrdered() {
+		if m.installedTargets[source] {
+			wantInstalled++
+		}
+	}
+	if !m.ApplyConfirm || len(m.selectedApplyTargets()) != wantInstalled {
+		t.Errorf("expected installed targets selected and advanced to confirm")
+	}
+
+	// 5. Esc cancels apply flow
+	m.startApplyFlow()
+	updated, _ = m.handleApplyTargetSelection("esc")
+	m = updated.(Model)
+	if m.ApplyTargetSelect || m.ApplyConfirm {
+		t.Errorf("esc should close apply modals")
+	}
+
+	// 6. 'q' and 'ctrl+c' quit from selection modal
+	m.startApplyFlow()
+	_, cmdQ := m.handleApplyTargetSelection("q")
+	if cmdQ == nil {
+		t.Errorf("expected quit command from 'q'")
+	}
+	_, cmdCtrlC := m.handleApplyTargetSelection("ctrl+c")
+	if cmdCtrlC == nil {
+		t.Errorf("expected quit command from 'ctrl+c'")
+	}
+
+	// 7. Confirm modal esc cancels
+	m.startApplyFlow()
+	updated, _ = m.handleApplyTargetSelection("enter")
+	m = updated.(Model)
+	if !m.ApplyConfirm {
+		t.Fatalf("expected ApplyConfirm true")
+	}
+	updated, _ = m.handleApplyConfirm("esc")
+	m = updated.(Model)
+	if m.ApplyConfirm {
+		t.Errorf("esc on confirm modal should close it")
+	}
+
+	// 8. Confirm modal 'q' and 'ctrl+c' quit
+	m.startApplyFlow()
+	m.ApplyConfirm = true
+	_, cmdConfirmQ := m.handleApplyConfirm("q")
+	if cmdConfirmQ == nil {
+		t.Errorf("expected quit command from confirm 'q'")
+	}
+	_, cmdConfirmCtrlC := m.handleApplyConfirm("ctrl+c")
+	if cmdConfirmCtrlC == nil {
+		t.Errorf("expected quit command from confirm 'ctrl+c'")
+	}
+
+	// 9. Confirm with nil account
+	mEmpty := testModelForHotkeys(0)
+	mEmpty.startApplyFlow()
+	mEmpty.ApplyConfirm = true
+	updated, cmd := mEmpty.handleApplyConfirm("enter")
+	mEmpty = updated.(Model)
+	if mEmpty.ApplyConfirm || cmd != nil {
+		t.Errorf("confirm with nil account should reset without command")
+	}
+
+	// 10. beginApplyFlow with nil active account
+	mNil := testModelForHotkeys(0)
+	updated, cmd = mNil.beginApplyFlow()
+	if cmd != nil {
+		t.Errorf("beginApplyFlow on empty accounts should return nil command")
+	}
+}
+
+func TestApplyFlow_FormatErrorsAndHelpers(t *testing.T) {
+	// 1. formatTargetErrors
+	if got := formatTargetErrors(nil); got != "" {
+		t.Errorf("formatTargetErrors(nil) = %q, want empty", got)
+	}
+
+	errMap := map[config.Source]error{
+		config.SourceCodex:    os.ErrPermission,
+		config.SourceOpenCode: nil,
+		config.SourcePi:       os.ErrNotExist,
+	}
+	formatted := formatTargetErrors(errMap)
+	if !strings.Contains(formatted, "codex:") || !strings.Contains(formatted, "pi:") {
+		t.Errorf("formatTargetErrors output missing sources: %s", formatted)
+	}
+
+	// 2. mapKeysSortedBySource
+	valMap := map[config.Source]string{
+		config.SourceOMP:      "/path/omp",
+		config.SourceCodex:    "/path/codex",
+		config.SourcePi:       "/path/pi",
+		config.SourceOpenCode: "/path/opencode",
+		"invalid":             "/path/invalid",
+	}
+	sorted := mapKeysSortedBySource(valMap)
+	expectedOrder := []config.Source{config.SourceCodex, config.SourceOpenCode, config.SourcePi, config.SourceOMP}
+	for i, src := range expectedOrder {
+		if i >= len(sorted) || sorted[i] != src {
+			t.Errorf("sorted[%d] = %v, want %v", i, sorted[i], src)
+		}
+	}
+
+	// 3. sourceFromLabel & sourceDisplayName & sourceListText
+	labelTests := []struct {
+		label    string
+		wantSrc  config.Source
+		wantOK   bool
+		wantDisp string
+	}{
+		{"app", config.SourceManaged, true, "app"},
+		{"managed", config.SourceManaged, true, "app"},
+		{"codex", config.SourceCodex, true, "codex"},
+		{"opencode", config.SourceOpenCode, true, "opencode"},
+		{"pi", config.SourcePi, true, "pi"},
+		{"omp", config.SourceOMP, true, "omp"},
+		{"unknown", "", false, "unknown"},
+	}
+	for _, tt := range labelTests {
+		src, ok := sourceFromLabel(tt.label)
+		if ok != tt.wantOK || src != tt.wantSrc {
+			t.Errorf("sourceFromLabel(%q) = (%v, %v), want (%v, %v)", tt.label, src, ok, tt.wantSrc, tt.wantOK)
+		}
+		disp := sourceDisplayName(config.Source(tt.label))
+		if disp != tt.wantDisp {
+			t.Errorf("sourceDisplayName(%q) = %q, want %q", tt.label, disp, tt.wantDisp)
+		}
+	}
+
+	if got := sourceListText(nil); got != "n/a" {
+		t.Errorf("sourceListText(nil) = %q, want n/a", got)
+	}
+	if got := sourceListText([]config.Source{config.SourceCodex, config.SourcePi}); got != "codex, pi" {
+		t.Errorf("sourceListText = %q, want 'codex, pi'", got)
+	}
+
+	// 4. dedupeSources
+	deduped := dedupeSources([]config.Source{config.SourceCodex, config.SourceCodex, "invalid", config.SourcePi})
+	if len(deduped) != 2 {
+		t.Errorf("dedupeSources len = %d, want 2", len(deduped))
+	}
+}
+
+func TestApplyToTargetsCmd_Execution(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
+	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(tmp, "opencode", "auth.json"))
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "pi", "auth.json"))
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "omp", "agent.db"))
+
+	acct := &config.Account{
+		AccessToken:  "tok-apply-cmd",
+		RefreshToken: "ref-apply-cmd",
+		AccountID:    "acc-cmd",
+		Email:        "cmd@example.com",
+		Source:       config.SourceManaged,
+		Writable:     true,
+	}
+
+	// 1. Apply to all targets via command
+	cmd := ApplyToTargetsCmd(acct, []config.Source{config.SourceCodex, config.SourceOpenCode, config.SourcePi, config.SourceOMP})
+	if cmd == nil {
+		t.Fatalf("expected command from ApplyToTargetsCmd")
+	}
+	msg := cmd()
+	if accountsMsg, ok := msg.(AccountsMsg); ok {
+		if len(accountsMsg.Accounts) == 0 {
+			t.Errorf("expected loaded accounts in AccountsMsg")
+		}
+	} else if errMsg, ok := msg.(ErrMsg); ok {
+		t.Errorf("unexpected ErrMsg from ApplyToTargetsCmd: %v", errMsg.Err)
+	}
+
+	// 2. ApplyToTargetsCmd with nil account
+	nilCmd := ApplyToTargetsCmd(nil, []config.Source{config.SourceCodex})
+	if nilCmd != nil {
+		t.Errorf("ApplyToTargetsCmd(nil) should return nil command")
+	}
+
+	// 3. ApplyToTargetsCmd with empty targets
+	emptyCmd := ApplyToTargetsCmd(acct, []config.Source{})
+	msgEmpty := emptyCmd()
+	if errMsg, ok := msgEmpty.(ErrMsg); !ok {
+		t.Errorf("expected ErrMsg for empty targets, got: %T", msgEmpty)
+	} else if !strings.Contains(errMsg.Err.Error(), "no apply target selected") {
+		t.Errorf("expected 'no apply target selected' error, got: %v", errMsg.Err)
+	}
+}
+
+func TestApplyToTargetsWithPreferenceCmdBranches(t *testing.T) {
+	applyErr := errors.New("apply")
+	preferenceErr := errors.New("preference")
+	tests := []struct {
+		name string
+		msg  tea.Msg
+	}{
+		{"accounts", AccountsMsg{Notice: "applied"}},
+		{"notice", NoticeMsg{Text: "applied"}},
+		{"error", ErrMsg{Err: applyErr}},
+		{"other", struct{}{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := ApplyToTargetsWithPreferenceCmd(func() tea.Msg { return test.msg }, preferenceErr)()
+			switch result := got.(type) {
+			case AccountsMsg:
+				if !strings.Contains(result.Notice, "preference was not saved") {
+					t.Fatal(result.Notice)
+				}
+			case NoticeMsg:
+				if !strings.Contains(result.Text, "preference was not saved") {
+					t.Fatal(result.Text)
+				}
+			case ErrMsg:
+				if !errors.Is(result.Err, applyErr) || !errors.Is(result.Err, preferenceErr) {
+					t.Fatalf("joined error does not preserve causes: %v", result.Err)
+				}
+			default:
+				t.Fatalf("unexpected result %T", got)
+			}
+		})
+	}
+	original := NoticeMsg{Text: "applied"}
+	if got := ApplyToTargetsWithPreferenceCmd(func() tea.Msg { return original }, nil)(); !reflect.DeepEqual(got, original) {
+		t.Fatalf("nil preference error changed result: %#v", got)
+	}
+	if ApplyToTargetsWithPreferenceCmd(nil, preferenceErr) != nil {
+		t.Fatal("nil apply command should remain nil")
+	}
+}
+
+func TestRestoreOMPAccountsCmdImmediatelyMarksAllManagedAccounts(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "omp", "agent.db"))
+	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
+	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(tmp, "opencode", "auth.json"))
+	t.Setenv("OPENCODE_DATA_DIR", filepath.Join(tmp, "opencode-data"))
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "pi", "auth.json"))
+	for _, account := range []*config.Account{
+		{Label: "one", AccountID: "acc-1", Email: "one@omp.sh", AccessToken: "tok-1"},
+		{Label: "two", AccountID: "acc-2", Email: "two@omp.sh", AccessToken: "tok-2"},
+	} {
+		if err := config.UpsertManagedAccount(account); err != nil {
+			t.Fatal(err)
+		}
+	}
+	msg := RestoreOMPAccountsCmd("managed:2")()
+	accountsMsg, ok := msg.(AccountsMsg)
+	if !ok {
+		t.Fatalf("restore command returned %T: %#v", msg, msg)
+	}
+	if accountsMsg.ActiveKey != "managed:2" {
+		t.Fatalf("restore active key = %q, want managed:2", accountsMsg.ActiveKey)
+	}
+	m := testModelForHotkeys(1)
+	updated, _ := m.Update(accountsMsg)
+	m = updated.(Model)
+	for _, account := range m.Accounts {
+		if account.AccountID == "acc-1" || account.AccountID == "acc-2" {
+			if !strings.Contains(m.activeSourceBadgesForAccount(account), "M") {
+				t.Errorf("restored account %s missing immediate OMP badge", account.AccountID)
+			}
+		}
+	}
+	if !strings.Contains(m.Notice, "restored 2 OMP accounts") {
+		t.Errorf("expected restore notice, got %q", m.Notice)
+	}
+}
+
+func TestRestoreOMPAccountsCmdSurfacesErrors(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(tmp, "cfg"))
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(tmp, "omp", "agent.db"))
+	t.Setenv("CODEX_HOME", filepath.Join(tmp, "codex"))
+	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(tmp, "opencode", "auth.json"))
+	t.Setenv("OPENCODE_DATA_DIR", filepath.Join(tmp, "opencode-data"))
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(tmp, "pi", "auth.json"))
+	msg := RestoreOMPAccountsCmd("")()
+	errMsg, ok := msg.(ErrMsg)
+	if !ok || errMsg.Err == nil {
+		t.Fatalf("expected restore error, got %#v", msg)
+	}
+	m := testModelForHotkeys(1)
+	updated, _ := m.Update(errMsg)
+	if updated.(Model).Err == nil {
+		t.Fatal("expected error modal state")
+	}
+}
+func TestBadges_EdgeCasesAndEmptySources(t *testing.T) {
+	// 1. nil account returns empty
+	m := testModelForHotkeys(1)
+	if got := m.activeSourceBadgesForAccount(nil); got != "" {
+		t.Errorf("expected empty badges for nil account, got %q", got)
+	}
+
+	// 2. Empty ActiveSourcesByIdentity returns empty
+	m.ActiveSourcesByIdentity = nil
+	acct := &config.Account{Key: "acc-1", AccountID: "acc-1"}
+	if got := m.activeSourceBadgesForAccount(acct); got != "" {
+		t.Errorf("expected empty badges when ActiveSourcesByIdentity is nil, got %q", got)
+	}
+
+	// 3. Account with no active sources returns empty
+	m.ActiveSourcesByIdentity = map[string][]string{
+		"account:acc-other": {"codex"},
+	}
+	if got := m.activeSourceBadgesForAccount(acct); got != "" {
+		t.Errorf("expected empty badges when account not active in any source, got %q", got)
+	}
+
+	// 4. renderActiveSourceBadges with empty string returns empty
+	if got := m.renderActiveSourceBadges(acct, true); got != "" {
+		t.Errorf("expected empty rendered badges when no sources active, got %q", got)
+	}
+
+	// 5. renderActiveSourceBadges with inactive row style
+	m.ActiveSourcesByIdentity = map[string][]string{
+		"account:acc-1": {"codex", "opencode", "pi", "omp"},
+	}
+	outActive := m.renderActiveSourceBadges(acct, true)
+	outMuted := m.renderActiveSourceBadges(acct, false)
+	if outActive == "" || outMuted == "" {
+		t.Errorf("expected rendered badges for all 4 sources")
+	}
+	if strings.Count(outActive, "O") != 2 || !strings.Contains(outActive, "C") || !strings.Contains(outActive, "P") {
+		t.Errorf("expected C, two O letters (OpenCode + OMP) and P in rendered badges, got: %s", outActive)
+	}
+	if strings.Count(outMuted, "O") != 2 || !strings.Contains(outMuted, "C") || !strings.Contains(outMuted, "P") {
+		t.Errorf("expected C, two O letters (OpenCode + OMP) and P in muted rendered badges, got: %s", outMuted)
+	}
+}
+
+func isolateApplyTestEnvironment(t *testing.T, commands ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("CQ_CONFIG_HOME", filepath.Join(root, "cq"))
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
+	t.Setenv("OPENCODE_AUTH_PATH", filepath.Join(root, "opencode", "auth.json"))
+	t.Setenv("OPENCODE_DATA_DIR", filepath.Join(root, "opencode-data"))
+	t.Setenv("CQ_PI_AUTH_PATH", filepath.Join(root, "pi", "auth.json"))
+	t.Setenv("CQ_OMP_DB_PATH", filepath.Join(root, "omp", "agent.db"))
+	for _, dir := range []string{"home", "cq", "codex", "opencode", "opencode-data", "pi", "omp"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range commands {
+		if err := os.WriteFile(filepath.Join(bin, command), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin)
+	return root
+}
