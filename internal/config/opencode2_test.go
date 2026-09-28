@@ -462,6 +462,25 @@ func TestOpenCodeCompositeFansOutLegacyAndNative(t *testing.T) {
 	assertOpenCode2Row(t, dbPath, "acct-fanout", "access-fanout", true)
 }
 
+func TestOpenCodeCompositeUnavailableRefreshNoOp(t *testing.T) {
+	_, _ = setupOpenCode2TestEnv(t)
+	account := openCode2TestAccount("acct-unavailable", "access-unavailable", "", time.Time{})
+
+	path, err := applyOpenCodeComposite(account, targetWriteRefresh)
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if path != "" {
+		t.Fatalf("refresh path = %q, want empty", path)
+	}
+
+	if _, err := applyOpenCodeComposite(account, targetWriteApply); err == nil {
+		t.Fatal("apply unexpectedly succeeded without an OpenCode store")
+	} else if err.Error() != "OpenCode store is not available" {
+		t.Fatalf("apply error = %v, want unavailable-store error", err)
+	}
+}
+
 func TestSaveOpenCodeAccountRefreshFollowsLoadedPath(t *testing.T) {
 	t.Run("legacy", func(t *testing.T) {
 		root, _ := setupOpenCode2TestEnv(t)

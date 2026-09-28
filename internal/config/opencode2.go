@@ -960,6 +960,9 @@ func applyOpenCodeComposite(account *Account, mode targetWriteMode) (string, err
 		return "", err
 	}
 	if !capabilities.Legacy && !capabilities.V2 {
+		if mode == targetWriteRefresh {
+			return "", nil
+		}
 		return "", fmt.Errorf("OpenCode store is not available")
 	}
 	changes, err := prepareOpenCodeLegacyChanges(capabilities, account, mode)
