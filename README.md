@@ -14,11 +14,6 @@ A TUI for switching between Codex accounts and monitoring quota usage, written i
 - OAuth authentication via browser
 - Configurable auto-refresh: the active account refreshes on a short interval, the rest on a longer background interval
 - Two view modes: compact for many accounts, tabs for focused viewing when you have just a few.
-
-### OpenCode compatibility
-
-CQ detects legacy OpenCode and native OpenCode 2. Apply updates each installed generation, including both when distinct v1 and v2 installations exist. OpenCode 2 uses its native credential pool. From the action menu, `Restore all accounts to OpenCode 2 pool` preserves existing OpenCode credentials and activates the active CQ account.
-
 ## Installation
 
 Homebrew:
