@@ -53,6 +53,9 @@ func (m Model) currentOverlayModal() string {
 	if m.OMPRestoreConfirm {
 		return m.renderOMPRestoreConfirmModal()
 	}
+	if m.OpenCode2RestoreConfirm {
+		return m.renderOpenCode2RestoreConfirmModal()
+	}
 
 	if m.Err != nil {
 		return m.renderErrorModal()
@@ -192,6 +195,15 @@ func (m Model) renderOMPRestoreConfirmModal() string {
 	return renderMessageModal(
 		"Restore OMP pool",
 		"Restore all CQ accounts to OMP?\nRe-enables OMP auto-balancing; CQ copies stay.\n[enter] Restore   [esc] Cancel",
+		WarningStyle,
+		m.Width,
+	)
+}
+
+func (m Model) renderOpenCode2RestoreConfirmModal() string {
+	return renderMessageModal(
+		"Restore OpenCode 2 pool",
+		"Restore all CQ-managed accounts to OpenCode 2's native credential pool?\nExisting OpenCode credentials are preserved.\nThe active CQ account will be activated.\n[enter] Restore   [esc] Cancel",
 		WarningStyle,
 		m.Width,
 	)

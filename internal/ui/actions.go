@@ -47,6 +47,11 @@ func (m Model) confirmActionMenu() (tea.Model, tea.Cmd) {
 		m.Err = nil
 		m.Notice = ""
 		return m, nil
+	case actionMenuRestoreOpenCode2Pool:
+		m.OpenCode2RestoreConfirm = true
+		m.Err = nil
+		m.Notice = ""
+		return m, nil
 	case actionMenuUpdate:
 		if !m.openUpdatePrompt() {
 			return m, nil
@@ -76,6 +81,7 @@ func (m *Model) openActionMenu() {
 	m.resetHelpState()
 	m.resetDeleteState()
 	m.resetApplyState()
+	m.openCode2RestoreAvailable = config.OpenCode2Available()
 	m.ShowInfo = false
 	m.Notice = ""
 	m.OMPRestoreConfirm = false
@@ -87,7 +93,9 @@ func (m *Model) openActionMenu() {
 func (m *Model) resetActionMenuState() {
 	m.ActionMenuVisible = false
 	m.ActionMenuCursor = 0
+	m.openCode2RestoreAvailable = false
 	m.OMPRestoreConfirm = false
+	m.OpenCode2RestoreConfirm = false
 }
 
 func (m *Model) openUpdatePrompt() bool {
@@ -262,6 +270,7 @@ func (m *Model) resetDeleteState() {
 func (m *Model) resetApplyState() {
 	m.ApplyTargetSelect = false
 	m.OMPRestoreConfirm = false
+	m.OpenCode2RestoreConfirm = false
 	m.ApplyConfirm = false
 	m.ApplyTargets = nil
 	m.ApplyTargetCursor = 0

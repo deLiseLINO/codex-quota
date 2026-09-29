@@ -30,7 +30,9 @@ type Model struct {
 	lastConfirmedApplyTargets map[config.Source]bool
 	applyTargetOptions        []config.Source
 	installedTargets          map[config.Source]bool
+	openCode2RestoreAvailable bool
 	OMPRestoreConfirm         bool
+	OpenCode2RestoreConfirm   bool
 	HelpVisible               bool
 	ActionMenuVisible         bool
 	ActionMenuCursor          int
@@ -250,6 +252,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.OMPRestoreConfirm {
 			return m.handleOMPRestoreConfirm(keyStr)
+		}
+		if m.OpenCode2RestoreConfirm {
+			return m.handleOpenCode2RestoreConfirm(keyStr)
 		}
 
 		switch keyStr {

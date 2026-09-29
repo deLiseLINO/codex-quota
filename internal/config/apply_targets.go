@@ -23,7 +23,27 @@ func SupportedApplyTargets() []Source {
 }
 
 func InstalledApplyTargets() []Source {
-	return installedApplyTargets(exec.LookPath)
+	capabilities, err := detectOpenCodeCapabilities()
+	if err != nil {
+		capabilities = openCodeCapabilities{}
+	}
+	return installedApplyTargetsWithOpenCode(exec.LookPath, capabilities)
+}
+
+func installedApplyTargetsWithOpenCode(lookPath func(string) (string, error), capabilities openCodeCapabilities) []Source {
+	targets := make([]Source, 0, len(applyHarnesses))
+	for _, harness := range applyHarnesses {
+		if harness.source == SourceOpenCode {
+			if capabilities.Legacy || capabilities.V2 {
+				targets = append(targets, harness.source)
+			}
+			continue
+		}
+		if _, err := lookPath(harness.command); err == nil {
+			targets = append(targets, harness.source)
+		}
+	}
+	return targets
 }
 
 func installedApplyTargets(lookPath func(string) (string, error)) []Source {

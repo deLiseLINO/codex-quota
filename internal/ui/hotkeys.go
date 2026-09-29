@@ -284,3 +284,29 @@ func (m Model) handleOMPRestoreConfirm(keyStr string) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+func (m Model) handleOpenCode2RestoreConfirm(keyStr string) (tea.Model, tea.Cmd) {
+	switch keyStr {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.OpenCode2RestoreConfirm = false
+		return m, nil
+	case "enter":
+		account := cloneAccount(m.activeAccount())
+		if account == nil {
+			m.OpenCode2RestoreConfirm = false
+			m.Loading = false
+			m.Err = nil
+			m.Notice = "cannot restore OpenCode 2 pool: no active account"
+			m.noticeSeq++
+			return m, scheduleNoticeClearCmd(m.noticeSeq)
+		}
+		m.OpenCode2RestoreConfirm = false
+		m.Loading = true
+		m.Err = nil
+		m.Notice = ""
+		return m, RestoreOpenCode2AccountsCmd(account, m.activeAccountKey())
+	}
+	return m, nil
+}

@@ -18,22 +18,44 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 	if err != nil {
 		return AccountsLoadResult{}, err
 	}
-	externalAccounts := make([]*Account, 0, 4)
+	externalAccounts := make([]*Account, 0, 8)
 
-	opencodePaths := opencodeAuthPaths()
-	writable := firstExistingPath(opencodePaths)
-	if writable == "" && len(opencodePaths) > 0 {
-		writable = opencodePaths[0]
+	openCodeCaps, err := detectOpenCodeCapabilities()
+	if err != nil {
+		return AccountsLoadResult{}, err
 	}
-
-	for _, path := range opencodePaths {
-		openCodeMain, err := loadOpenCodeAccountFile(path, SourceOpenCode, path == writable)
+	var activeOpenCodeAccount *Account
+	var activeOpenCode2Accounts []*Account
+	if openCodeCaps.Legacy {
+		writable := firstExistingPath(openCodeCaps.legacyExistingPaths)
+		if writable == "" && len(openCodeCaps.legacyPaths) > 0 {
+			writable = openCodeCaps.legacyPaths[0]
+		}
+		for _, path := range openCodeCaps.legacyExistingPaths {
+			openCodeMain, err := loadOpenCodeAccountFile(path, SourceOpenCode, path == writable)
+			if err != nil {
+				return AccountsLoadResult{}, err
+			}
+			if openCodeMain != nil {
+				externalAccounts = append(externalAccounts, openCodeMain)
+			}
+		}
+		activePath := opencodeAuthPath()
+		if explicit := cleanPath(os.Getenv("OPENCODE_AUTH_PATH")); explicit != "" {
+			activePath = explicit
+		}
+		activeOpenCodeAccount, err = loadOpenCodeAccountFile(activePath, SourceOpenCode, true)
 		if err != nil {
 			return AccountsLoadResult{}, err
 		}
-		if openCodeMain != nil {
-			externalAccounts = append(externalAccounts, openCodeMain)
+	}
+	if openCodeCaps.V2 {
+		openCode2Accounts, activeAccounts, err := loadOpenCode2Accounts(openCodeCaps.v2Path)
+		if err != nil {
+			return AccountsLoadResult{}, err
 		}
+		externalAccounts = append(externalAccounts, openCode2Accounts...)
+		activeOpenCode2Accounts = activeAccounts
 	}
 
 	codexAccount, err := loadCodexAccountFile(codexAuthPath())
@@ -42,10 +64,6 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 	}
 	if codexAccount != nil {
 		externalAccounts = append(externalAccounts, codexAccount)
-	}
-	activeOpenCodeAccount, err := loadOpenCodeAccountFile(opencodeAuthPath(), SourceOpenCode, true)
-	if err != nil {
-		return AccountsLoadResult{}, err
 	}
 
 	piPaths := piAuthPaths()
@@ -109,6 +127,9 @@ func LoadAllAccountsWithSources() (AccountsLoadResult, error) {
 	activeSourcesByIdentity := make(map[string][]string)
 	appendActiveSource(activeSourcesByIdentity, codexAccount, SourceCodex)
 	appendActiveSource(activeSourcesByIdentity, activeOpenCodeAccount, SourceOpenCode)
+	for _, account := range activeOpenCode2Accounts {
+		appendActiveSource(activeSourcesByIdentity, account, SourceOpenCode)
+	}
 	appendActiveSource(activeSourcesByIdentity, activePiAccount, SourcePi)
 	for _, account := range activeOMPAccounts {
 		appendActiveSource(activeSourcesByIdentity, account, SourceOMP)
@@ -369,29 +390,8 @@ func buildCodexAccountFromTokens(tokens map[string]any, path string) *Account {
 }
 
 func saveOpenCodeAccount(account *Account) error {
-	root, err := readJSONMap(account.FilePath)
-	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", account.FilePath, err)
-	}
-
-	openai := asMap(root["openai"])
-	if openai == nil {
-		openai = make(map[string]any)
-		root["openai"] = openai
-	}
-
-	openai["access"] = account.AccessToken
-	if account.RefreshToken != "" {
-		openai["refresh"] = account.RefreshToken
-	}
-	if account.AccountID != "" {
-		openai["accountId"] = account.AccountID
-	}
-	if !account.ExpiresAt.IsZero() {
-		openai["expires"] = account.ExpiresAt.UnixMilli()
-	}
-
-	return writeJSONMap(account.FilePath, root)
+	_, err := applyOpenCodeComposite(account, targetWriteRefresh)
+	return err
 }
 
 func saveCodexAccount(account *Account) error {
@@ -721,44 +721,5 @@ func writeJSONMap(path string, root map[string]any) error {
 	}
 
 	data = append(data, '\n')
-
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("failed to create directory %s: %w", dir, err)
-	}
-
-	tmpFile, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file for %s: %w", path, err)
-	}
-
-	tmpPath := tmpFile.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if _, err := tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-
-	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-
-	cleanup = false
-	return nil
+	return writeJSONBytesAtomic(path, data, 0)
 }

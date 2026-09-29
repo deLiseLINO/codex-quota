@@ -219,6 +219,31 @@ func RestoreOMPAccountsCmd(activeKey string) tea.Cmd {
 	}
 }
 
+func RestoreOpenCode2AccountsCmd(activeAccount *config.Account, activeKey string) tea.Cmd {
+	accountSnapshot := cloneAccount(activeAccount)
+	activeKeySnapshot := strings.TrimSpace(activeKey)
+	return func() tea.Msg {
+		if accountSnapshot == nil {
+			return ErrMsg{Err: fmt.Errorf("failed to restore OpenCode 2 pool: no active account")}
+		}
+		count, path, err := config.RestoreManagedAccountsToOpenCode2(accountSnapshot)
+		if err != nil {
+			return ErrMsg{Err: fmt.Errorf("failed to restore OpenCode 2 pool: %w", err)}
+		}
+		result, err := config.LoadAllAccountsWithSources()
+		if err != nil {
+			return ErrMsg{Err: fmt.Errorf("failed to reload accounts after OpenCode 2 restore: %w", err)}
+		}
+		return AccountsMsg{
+			ActiveKey:               activeKeySnapshot,
+			Accounts:                result.Accounts,
+			SourcesByAccountID:      result.SourcesByAccountID,
+			ActiveSourcesByIdentity: result.ActiveSourcesByIdentity,
+			Notice:                  fmt.Sprintf("restored %d CQ accounts to OpenCode 2: %s", count, path),
+		}
+	}
+}
+
 func DeleteAccountSourcesCmd(account *config.Account, sources []config.Source, activeKey string) tea.Cmd {
 	accountSnapshot := cloneAccount(account)
 	if accountSnapshot == nil {

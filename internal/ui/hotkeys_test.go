@@ -99,6 +99,31 @@ func TestEnterInApplySelectionKeepsModalSemantics(t *testing.T) {
 	}
 }
 
+func TestEnterInApplyConfirmationDispatchesConfirmationHandler(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("CQ_CONFIG_HOME", tmp+"/config")
+
+	m := testModelForHotkeys(1)
+	m.startApplyFlow()
+	m.ApplyTargets = map[config.Source]bool{config.SourceCodex: true}
+
+	selected, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = selected.(Model)
+	if !m.ApplyConfirm {
+		t.Fatal("expected apply confirmation step to open")
+	}
+
+	confirmed, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := confirmed.(Model)
+	if got.ApplyConfirm {
+		t.Fatal("expected apply confirmation step to close after enter")
+	}
+	if cmd == nil {
+		t.Fatal("expected apply command after confirming")
+	}
+}
+
 func TestQuestionMarkOpensHelpOverlay(t *testing.T) {
 	m := testModelForHotkeys(1)
 

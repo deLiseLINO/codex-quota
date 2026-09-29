@@ -9,15 +9,16 @@ import (
 )
 
 const (
-	actionMenuApply          = "apply"
-	actionMenuRefresh        = "refresh"
-	actionMenuRefreshAll     = "refresh_all"
-	actionMenuInfo           = "info"
-	actionMenuAdd            = "add"
-	actionMenuView           = "view"
-	actionMenuDelete         = "delete"
-	actionMenuUpdate         = "update"
-	actionMenuRestoreOMPPool = "restore_omp_pool"
+	actionMenuApply                = "apply"
+	actionMenuRefresh              = "refresh"
+	actionMenuRefreshAll           = "refresh_all"
+	actionMenuInfo                 = "info"
+	actionMenuAdd                  = "add"
+	actionMenuView                 = "view"
+	actionMenuDelete               = "delete"
+	actionMenuUpdate               = "update"
+	actionMenuRestoreOMPPool       = "restore_omp_pool"
+	actionMenuRestoreOpenCode2Pool = "restore_opencode2_pool"
 )
 
 type actionMenuItem struct {
@@ -51,6 +52,12 @@ func (m Model) actionMenuSections() []actionMenuSection {
 				{ID: actionMenuRestoreOMPPool, Label: "Restore all accounts to OMP pool", Shortcut: "p"},
 			},
 		},
+	}
+	if m.openCode2RestoreAvailable {
+		sections[1].Items = append(sections[1].Items, actionMenuItem{
+			ID:    actionMenuRestoreOpenCode2Pool,
+			Label: "Restore all accounts to OpenCode 2 pool",
+		})
 	}
 	if strings.TrimSpace(m.UpdatePromptVersion) != "" && update.SupportsAutoUpdate(m.UpdatePromptMethod) {
 		sections[1].Items = append(sections[1].Items, actionMenuItem{ID: actionMenuUpdate, Label: "Install update", Shortcut: "u"})

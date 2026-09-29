@@ -165,7 +165,7 @@ func DeleteAccountFromSource(account *Account, source Source) error {
 	case SourceManaged:
 		return DeleteManagedAccountByIdentity(account)
 	case SourceOpenCode:
-		return DeleteOpenCodeAuthAccount()
+		return DeleteOpenCodeAuthAccount(account)
 	case SourceCodex:
 		return DeleteCodexAuthAccount()
 	case SourcePi:

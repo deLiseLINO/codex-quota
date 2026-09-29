@@ -328,79 +328,11 @@ func ApplyAccountToOpenCode(account *Account) (string, error) {
 }
 
 func applyAccountToOpenCode(account *Account, mode targetWriteMode) (string, error) {
-	if account == nil {
-		return "", fmt.Errorf("account is nil")
-	}
-	paths := opencodeApplyPaths()
-	if len(paths) == 0 {
-		return "", fmt.Errorf("OpenCode auth path is unknown")
-	}
+	return applyOpenCodeComposite(account, mode)
+}
 
-	successPaths := make([]string, 0, len(paths))
-	errorsList := make([]string, 0)
-	skipped := false
-
-	for _, path := range paths {
-		root, err := readJSONMap(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				root = make(map[string]any)
-			} else {
-				errorsList = append(errorsList, fmt.Sprintf("%s: failed to read: %v", path, err))
-				continue
-			}
-		}
-
-		openai := asMap(root["openai"])
-		if openai == nil {
-			openai = make(map[string]any)
-			root["openai"] = openai
-		}
-
-		accountToWrite := chooseTargetWriteAccount(account, buildOpenAIAccount(openai, SourceOpenCode, path, true), mode)
-		if accountToWrite == nil {
-			skipped = true
-			continue
-		}
-
-		openai["access"] = accountToWrite.AccessToken
-		if accountToWrite.RefreshToken != "" {
-			openai["refresh"] = accountToWrite.RefreshToken
-		}
-		if accountToWrite.AccountID != "" {
-			openai["accountId"] = accountToWrite.AccountID
-		}
-		if accountToWrite.Email != "" {
-			openai["email"] = accountToWrite.Email
-		}
-		if !accountToWrite.ExpiresAt.IsZero() {
-			openai["expires"] = accountToWrite.ExpiresAt.UnixMilli()
-		}
-
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			errorsList = append(errorsList, fmt.Sprintf("%s: failed to ensure directory: %v", path, err))
-			continue
-		}
-
-		if err := writeJSONMap(path, root); err != nil {
-			errorsList = append(errorsList, fmt.Sprintf("%s: failed to write: %v", path, err))
-			continue
-		}
-
-		successPaths = append(successPaths, path)
-	}
-
-	if len(successPaths) == 0 {
-		if skipped {
-			return "", nil
-		}
-		if len(errorsList) > 0 {
-			return "", fmt.Errorf("apply to OpenCode failed: %s", strings.Join(errorsList, "; "))
-		}
-		return "", fmt.Errorf("apply to OpenCode failed: no writable auth path")
-	}
-
-	return successPaths[0], nil
+func DeleteOpenCodeAuthAccount(account *Account) error {
+	return deleteOpenCodeComposite(account)
 }
 
 func ApplyAccountToCodex(account *Account) (string, error) {
@@ -455,54 +387,6 @@ func applyAccountToCodex(account *Account, mode targetWriteMode) (string, error)
 	}
 
 	return path, nil
-}
-
-func DeleteOpenCodeAuthAccount() error {
-	paths := opencodeExistingPaths()
-	if len(paths) == 0 {
-		if len(opencodeAuthPaths()) == 0 {
-			return fmt.Errorf("OpenCode auth path is unknown")
-		}
-		return nil
-	}
-
-	errorsList := make([]string, 0)
-	for _, path := range paths {
-		root, err := readJSONMap(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			errorsList = append(errorsList, fmt.Sprintf("%s: failed to read: %v", path, err))
-			continue
-		}
-
-		openai := asMap(root["openai"])
-		if openai == nil {
-			continue
-		}
-
-		changed := false
-		changed = deleteMapKey(openai, "access") || changed
-		changed = deleteMapKey(openai, "refresh") || changed
-		changed = deleteMapKey(openai, "accountId") || changed
-		changed = deleteMapKey(openai, "email") || changed
-		changed = deleteMapKey(openai, "expires") || changed
-		if !changed {
-			continue
-		}
-
-		if err := writeJSONMap(path, root); err != nil {
-			errorsList = append(errorsList, fmt.Sprintf("%s: failed to write: %v", path, err))
-			continue
-		}
-	}
-
-	if len(errorsList) > 0 {
-		return fmt.Errorf("delete from OpenCode failed: %s", strings.Join(errorsList, "; "))
-	}
-
-	return nil
 }
 
 func opencodeExistingPaths() []string {

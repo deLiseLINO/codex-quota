@@ -35,10 +35,13 @@ func opencodeAuthPaths() []string {
 }
 
 func opencodeDirsForScan() []string {
-	dirs := make([]string, 0, 4)
+	dirs := make([]string, 0, 5)
 
 	if dir := cleanPath(os.Getenv("OPENCODE_DATA_DIR")); dir != "" {
 		dirs = append(dirs, dir)
+	}
+	if dir := cleanPath(os.Getenv("XDG_DATA_HOME")); dir != "" {
+		dirs = append(dirs, filepath.Join(dir, "opencode"))
 	}
 
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
