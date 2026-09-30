@@ -108,6 +108,15 @@ func (m *Model) normalizeActiveAccountForView(activeKey string) {
 				return
 			}
 		}
+
+		// Legacy fallback: older ui_state.json stored the bare workspace UUID as
+		// the active key, before per-user composite keys existed. Resolve it to an
+		// account whose AccountID matches — but only if exactly one does, so we
+		// never arbitrarily pick between two users in the same workspace.
+		if idx, ok := uniqueAccountIndexByLegacyKey(m.Accounts, activeKey); ok {
+			m.ActiveAccountIx = idx
+			return
+		}
 	}
 
 	if m.CompactMode {
@@ -118,6 +127,33 @@ func (m *Model) normalizeActiveAccountForView(activeKey string) {
 	}
 
 	m.ActiveAccountIx = 0
+}
+
+// uniqueAccountIndexByLegacyKey resolves a legacy bare-workspace-UUID key to a
+// single account. It returns ok=false when no account matches, or when more than
+// one account shares that AccountID (two users in one workspace) — the caller
+// must not guess between them.
+func uniqueAccountIndexByLegacyKey(accounts []*config.Account, legacyKey string) (int, bool) {
+	legacyKey = strings.TrimSpace(legacyKey)
+	if legacyKey == "" {
+		return 0, false
+	}
+	matchIdx := -1
+	for i, account := range accounts {
+		if account == nil {
+			continue
+		}
+		if strings.TrimSpace(account.AccountID) == legacyKey {
+			if matchIdx != -1 {
+				return 0, false
+			}
+			matchIdx = i
+		}
+	}
+	if matchIdx == -1 {
+		return 0, false
+	}
+	return matchIdx, true
 }
 
 func (m *Model) syncAndFetchActiveAccount() tea.Cmd {

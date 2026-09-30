@@ -131,9 +131,12 @@ func ActiveIdentityKeys(account *Account) []string {
 		return nil
 	}
 
-	keys := make([]string, 0, 4)
+	keys := make([]string, 0, 5)
 	if accountID := strings.TrimSpace(account.AccountID); accountID != "" {
 		keys = append(keys, "account:"+accountID)
+	}
+	if id := identityID(account); id != "" && id != strings.TrimSpace(account.AccountID) {
+		keys = append(keys, "account:"+id)
 	}
 	if email := normalizeEmail(account.Email); email != "" {
 		keys = append(keys, "email:"+email)

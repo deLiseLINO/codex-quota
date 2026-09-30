@@ -246,6 +246,7 @@ func accountFromTokenResponse(tokenResp *tokenExchangeResponse) (*config.Account
 
 	claims := config.ParseAccessToken(account.AccessToken)
 	account.AccountID = config.CanonicalAccountID(account.AccountID, claims.AccountID)
+	account.UserID = claims.UserID
 	if claims.ClientID != "" {
 		account.ClientID = claims.ClientID
 	}

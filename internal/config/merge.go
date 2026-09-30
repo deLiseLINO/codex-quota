@@ -30,8 +30,10 @@ func dedupeAccounts(input []*Account) []*Account {
 }
 
 func dedupeKey(account *Account) string {
-	if account.AccountID != "" {
-		return "account:" + account.AccountID
+	// Key on the per-user identity (workspace UUID + user id) so two users in the
+	// same workspace are not collapsed into one account.
+	if id := identityID(account); id != "" {
+		return "account:" + id
 	}
 	if email := normalizeEmail(account.Email); email != "" {
 		return "email:" + email
@@ -61,6 +63,9 @@ func mergeAccounts(left, right *Account) *Account {
 		merged.AccountID = secondary.AccountID
 	}
 	merged.AccountID = CanonicalAccountID(merged.AccountID, secondary.AccountID)
+	if merged.UserID == "" {
+		merged.UserID = secondary.UserID
+	}
 	if merged.ClientID == "" {
 		merged.ClientID = secondary.ClientID
 	}
