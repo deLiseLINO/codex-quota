@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -164,6 +165,33 @@ func TestOpenCode2PathAndDSN(t *testing.T) {
 	dsn := openCode2DSN(override, false)
 	if !strings.Contains(dsn, "%20") || !strings.Contains(dsn, "mode=rw") {
 		t.Fatalf("read-write DSN %q does not escape path or select rw mode", dsn)
+	}
+	if dsnPath, _, _ := strings.Cut(dsn, "?"); !strings.HasPrefix(dsnPath, "file:///") {
+		t.Fatalf("DSN %q is not an absolute file URI with an empty authority", dsn)
+	}
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("parse DSN %q: %v", dsn, err)
+	}
+	if parsed.Scheme != "file" || parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") {
+		t.Fatalf("DSN %q parsed as scheme=%q host=%q path=%q, want file URI with empty authority", dsn, parsed.Scheme, parsed.Host, parsed.Path)
+	}
+}
+
+func TestOpenCode2URIPathKeepsWindowsDriveLetterInPath(t *testing.T) {
+	// Synthetic paths only: the helper is pure and never touches the filesystem.
+	cases := map[string]string{
+		"C:/data/opencode/opencode.db": "/C:/data/opencode/opencode.db",
+		"/data/opencode/opencode.db":   "/data/opencode/opencode.db",
+		"//server/share/opencode.db":   "//server/share/opencode.db",
+	}
+	for input, want := range cases {
+		if got := openCode2URIPath(input); got != want {
+			t.Fatalf("URI path for %q = %q, want %q", input, got, want)
+		}
+	}
+	if got := openCode2URIPath(""); got != "" {
+		t.Fatalf("URI path for empty input = %q, want empty", got)
 	}
 }
 
