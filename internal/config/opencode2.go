@@ -260,12 +260,27 @@ func openCode2DSN(path string, readOnly bool) string {
 	if readOnly {
 		mode = "ro"
 	}
-	fileURL := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	fileURL := url.URL{Scheme: "file", Path: openCode2URIPath(path)}
 	query := url.Values{}
 	query.Set("mode", mode)
 	query.Set("_busy_timeout", strconv.Itoa(openCode2BusyTimeout))
 	fileURL.RawQuery = query.Encode()
 	return fileURL.String()
+}
+
+// openCode2URIPath builds the path component of a file:// URI. Windows volumes
+// need a leading slash so the drive letter ("C:") is not parsed as a URI
+// authority, which SQLite rejects with "invalid uri authority".
+func openCode2URIPath(path string) string {
+	slashed := filepath.ToSlash(path)
+	if slashed == "" {
+		return ""
+	}
+	if strings.HasPrefix(slashed, "/") {
+		// Already rooted, including UNC paths (\\server\share -> //server/share).
+		return slashed
+	}
+	return "/" + slashed
 }
 
 func openOpenCode2Database(path string, readOnly bool) (*sql.DB, error) {
